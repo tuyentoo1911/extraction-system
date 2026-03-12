@@ -63,7 +63,7 @@ for t in triples:
 print("Knowledge Graph edges: ", G.edges(data=True))
 
 # Lưu triples ra file JSON
-with open("../data/triples.json", "w", encoding="utf-8") as f:
+with open("data/triples.json", "w", encoding="utf-8") as f:
     json.dump(triples, f, ensure_ascii=False, indent=4)
 
-print("Saved triples to ../data/triples.json")
+print("Saved triples to data/triples.json")

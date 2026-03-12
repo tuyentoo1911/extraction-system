@@ -1,0 +1,68 @@
+# ===============================
+# Python
+# ===============================
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environment
+venv/
+env/
+.venv/
+
+# ===============================
+# Jupyter Notebook
+# ===============================
+.ipynb_checkpoints
+
+# ===============================
+# HuggingFace / Transformers cache
+# ===============================
+.cache/
+huggingface/
+transformers_cache/
+
+# ===============================
+# Model files
+# ===============================
+models/
+*.bin
+*.pt
+*.pth
+
+# ===============================
+# Data files
+# ===============================
+data/raw/
+data/processed/
+data/intermediate/
+
+# Output triples / graph results
+data/triples.json
+data/graph_metrics.json
+
+# ===============================
+# Logs
+# ===============================
+logs/
+*.log
+
+# ===============================
+# OS files
+# ===============================
+.DS_Store
+Thumbs.db
+
+# ===============================
+# IDE
+# ===============================
+.vscode/
+.idea/
+
+# ===============================
+# Temporary files
+# ===============================
+*.tmp
+*.temp
+
+*tree.txt

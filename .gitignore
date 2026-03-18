@@ -86,8 +86,6 @@ CSV/ner_labeled_data3.csv
 CSV/ner_labeled_data4.csv
 JSON/ner_labeled3.json
 JSON/ner_labeled4.json
-notebooks/graph-analysis.ipynb
-notebooks/labeling.ipynb
 phobert-ner-final/added_tokens.json
 phobert-ner-final/bpe.codes
 phobert-ner-final/config.json

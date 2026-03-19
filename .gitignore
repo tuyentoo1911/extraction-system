@@ -65,7 +65,8 @@ Thumbs.db
 *.tmp
 *.temp
 
-*tree.txt
+CSV/ner_conll.txt
+tree.txt
 tmp_cells.txt
 TXT/ner_title_conll.txt
 TXT/ner_content_conll.txt
@@ -115,3 +116,4 @@ phobert-ner-output/checkpoint-36730/trainer_state.json
 phobert-ner-output/checkpoint-36730/vocab.txt
 TXT/ner_conll3.txt
 TXT/ner_conll4.txt
+knowledge_graph_output

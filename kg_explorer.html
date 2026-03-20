@@ -1,0 +1,1236 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Knowledge Graph Explorer</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg:     #0d0f14;
+  --s1:     #13161e;
+  --s2:     #181c27;
+  --s3:     #1e2332;
+  --b1:     #222840;
+  --b2:     #2a3252;
+  --t1:     #e2e6f3;
+  --t2:     #7b84a3;
+  --t3:     #3d4666;
+  --acc:    #5b8df0;
+  --acc-d:  #3a6cd8;
+  --green:  #34d399;
+  --amber:  #fbbf24;
+  --red:    #f87171;
+  --purple: #a78bfa;
+  --teal:   #2dd4bf;
+  --pink:   #f472b6;
+  --orange: #fb923c;
+  --mono: 'IBM Plex Mono', monospace;
+  --sans: 'Inter', sans-serif;
+  --r:  6px;
+  --r2: 10px;
+}
+
+*, *::before, *::after { margin:0; padding:0; box-sizing:border-box; }
+html, body { height:100%; overflow:hidden; background:var(--bg); color:var(--t1); font-family:var(--sans); font-size:13px; }
+
+/* ══════════════════ TOPBAR ══════════════════ */
+.topbar {
+  height: 48px;
+  display: flex; align-items: center; gap: 12px;
+  padding: 0 16px;
+  background: var(--s1);
+  border-bottom: 1px solid var(--b1);
+  flex-shrink: 0;
+}
+.logo {
+  display: flex; align-items: center; gap: 8px;
+  font-weight: 700; font-size: 13.5px; letter-spacing: -.2px;
+  white-space: nowrap;
+}
+.logo-mark {
+  width: 26px; height: 26px; border-radius: 7px;
+  background: linear-gradient(135deg, var(--acc) 0%, #7c3aed 100%);
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+}
+.logo-mark svg { width:13px; height:13px; }
+.v-sep { width:1px; height:18px; background:var(--b1); flex-shrink:0; }
+
+/* search */
+.search-wrap { position: relative; flex: 1; max-width: 460px; }
+.search-input-row {
+  display: flex; align-items: center;
+  background: var(--s2); border: 1.5px solid var(--b1);
+  border-radius: var(--r2); overflow: hidden;
+  transition: border-color .15s;
+}
+.search-input-row:focus-within { border-color: var(--acc); }
+.search-icon { padding: 0 10px; color: var(--t3); flex-shrink:0; }
+.search-input-row input {
+  flex:1; padding: 7px 0; background: none; border: none;
+  color: var(--t1); font-family: var(--mono); font-size: 12px; outline: none;
+}
+.search-input-row input::placeholder { color: var(--t3); }
+.search-hint {
+  padding: 0 10px; font-size: 10px; font-family: var(--mono);
+  color: var(--t3); border-left: 1px solid var(--b1);
+  height: 100%; display: flex; align-items: center; gap: 4px;
+}
+.search-hint kbd {
+  background: var(--s3); border: 1px solid var(--b2);
+  border-radius: 3px; padding: 1px 4px; font-size: 9px; font-family: var(--mono);
+}
+
+/* autocomplete */
+.ac-drop {
+  position: absolute; top: calc(100% + 5px); left: 0; right: 0; z-index: 300;
+  background: var(--s2); border: 1px solid var(--b2); border-radius: var(--r2);
+  box-shadow: 0 12px 40px rgba(0,0,0,.7); overflow: hidden;
+  max-height: 280px; overflow-y: auto;
+}
+.ac-drop:empty { display: none; }
+.ac-drop::-webkit-scrollbar { width: 3px; }
+.ac-drop::-webkit-scrollbar-thumb { background: var(--b2); border-radius:2px; }
+.ac-row {
+  display: flex; align-items: center; gap: 10px;
+  padding: 9px 14px; cursor: pointer; transition: background .1s;
+}
+.ac-row:hover, .ac-row.hi { background: var(--s3); }
+.ac-row-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink:0; }
+.ac-row-name { flex:1; font-size: 12.5px; font-weight: 600; }
+.ac-row-type { font-size: 10px; font-family: var(--mono); color: var(--t3); }
+.ac-row-cnt  { font-size: 10px; font-family: var(--mono); color: var(--t2); }
+
+/* topbar stats */
+.tb-stats { display:flex; gap:16px; margin-left:auto; }
+.tb-stat  { display:flex; align-items:center; gap:5px; font-size:11px; font-family:var(--mono); color:var(--t2); }
+.tb-stat .dot { width:5px; height:5px; border-radius:50%; }
+
+/* buttons */
+.btn {
+  padding: 6px 13px; border-radius: var(--r); border: 1px solid var(--b2);
+  background: var(--s2); color: var(--t1); font-family: var(--sans);
+  font-size: 11.5px; font-weight: 600; cursor: pointer;
+  transition: all .15s; white-space: nowrap;
+}
+.btn:hover { border-color: var(--acc); color: var(--acc); }
+.btn-primary { background: var(--acc); border-color: var(--acc); color: #fff; }
+.btn-primary:hover { background: var(--acc-d); border-color: var(--acc-d); color: #fff; }
+
+/* ══════════════════ LAYOUT ══════════════════ */
+.layout { display:flex; height: calc(100vh - 48px); overflow:hidden; }
+
+/* ══════════════════ LEFT PANEL ══════════════════ */
+.left-panel {
+  width: 240px; flex-shrink: 0;
+  background: var(--s1); border-right: 1px solid var(--b1);
+  display: flex; flex-direction: column; overflow: hidden;
+}
+.panel-section { border-bottom: 1px solid var(--b1); padding: 14px 14px 12px; }
+.section-label {
+  font-size: 9.5px; font-weight: 700; letter-spacing: 1.3px;
+  text-transform: uppercase; color: var(--t3); margin-bottom: 10px;
+  display: flex; align-items: center; justify-content: space-between;
+}
+.section-label-action {
+  font-size: 9px; color: var(--acc); cursor: pointer;
+  font-weight: 500; letter-spacing: 0; text-transform: none;
+}
+.section-label-action:hover { text-decoration: underline; }
+
+/* depth */
+.depth-row { display:flex; align-items:center; justify-content:space-between; margin-bottom:10px; }
+.depth-row-label { font-size:11.5px; color:var(--t2); }
+.depth-seg { display:flex; background:var(--bg); border:1px solid var(--b1); border-radius:6px; overflow:hidden; }
+.depth-seg-btn {
+  width:28px; height:26px; display:flex; align-items:center; justify-content:center;
+  font-size:12px; font-weight:700; color:var(--t2); cursor:pointer;
+  transition: all .15s; font-family:var(--mono);
+}
+.depth-seg-btn + .depth-seg-btn { border-left:1px solid var(--b1); }
+.depth-seg-btn.on { background:var(--acc); color:#fff; }
+
+/* slider */
+.slider-row { display:flex; align-items:center; gap:8px; }
+.slider-row label { font-size:11.5px; color:var(--t2); flex:1; }
+.slider-row input[type=range] { width:80px; accent-color:var(--acc); }
+.slider-row .sv { font-size:11px; font-family:var(--mono); color:var(--t2); width:28px; text-align:right; }
+
+/* relation filter */
+.rel-filter-list { flex:1; overflow-y:auto; padding:4px 0; }
+.rel-filter-list::-webkit-scrollbar { width:3px; }
+.rel-filter-list::-webkit-scrollbar-thumb { background:var(--b2); border-radius:2px; }
+.rel-item {
+  display:flex; align-items:center; gap:8px; padding:5px 14px;
+  cursor:pointer; transition:background .1s; user-select:none;
+}
+.rel-item:hover { background:var(--s2); }
+.rel-item.off { opacity:.3; }
+.rel-item-check {
+  width:13px; height:13px; border-radius:3px;
+  border:1.5px solid var(--b2); flex-shrink:0;
+  display:flex; align-items:center; justify-content:center;
+}
+.rel-item:not(.off) .rel-item-check { background:var(--acc); border-color:var(--acc); }
+.rel-item:not(.off) .rel-item-check::after { content:'✓'; font-size:8px; color:#fff; }
+.rel-item-dot { width:7px; height:7px; border-radius:50%; flex-shrink:0; }
+.rel-item-name { font-size:11px; font-family:var(--mono); font-weight:500; flex:1; color:var(--t1); }
+.rel-item-cnt  { font-size:10px; font-family:var(--mono); color:var(--t3); }
+
+/* history */
+.hist-items { display:flex; flex-direction:column; gap:4px; }
+.hist-chip {
+  display:flex; align-items:center; gap:8px; padding:6px 9px;
+  background:var(--bg); border:1px solid var(--b1); border-radius:var(--r);
+  cursor:pointer; transition:all .12s;
+}
+.hist-chip:hover { border-color:var(--acc); background:rgba(91,141,240,.06); }
+.hist-chip-dot { width:6px; height:6px; border-radius:50%; flex-shrink:0; }
+.hist-chip-name {
+  font-size:11.5px; font-weight:600; flex:1;
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+}
+
+/* ══════════════════ CENTER: GRAPH + TRIPLES SPLIT ══════════════════ */
+.center-panel { flex:1; display:flex; flex-direction:column; overflow:hidden; }
+
+/* graph canvas */
+.graph-canvas {
+  flex:1; position:relative; overflow:hidden; background:var(--bg);
+  min-height:0;
+}
+.graph-canvas::before {
+  content:''; position:absolute; inset:0; pointer-events:none;
+  background-image: radial-gradient(circle, rgba(255,255,255,.018) 1px, transparent 1px);
+  background-size: 28px 28px;
+}
+#gsvg { width:100%; height:100%; cursor:grab; }
+#gsvg:active { cursor:grabbing; }
+
+/* graph empty */
+.g-empty {
+  position:absolute; inset:0; display:flex; flex-direction:column;
+  align-items:center; justify-content:center; gap:12px; pointer-events:none;
+}
+.g-empty-icon { font-size:44px; opacity:.06; }
+.g-empty-title { font-size:18px; font-weight:700; opacity:.15; letter-spacing:-.3px; }
+.g-empty-sub {
+  font-size:12px; color:var(--t3); text-align:center; line-height:1.8;
+  max-width:280px;
+}
+.g-empty-sub code { font-family:var(--mono); color:var(--acc); opacity:.7; }
+
+/* graph controls */
+.g-ctrl {
+  position:absolute; bottom:12px; right:12px;
+  display:flex; flex-direction:column; gap:3px;
+}
+.g-ctrl-btn {
+  width:30px; height:30px; background:var(--s1); border:1px solid var(--b1);
+  border-radius:var(--r); color:var(--t2); display:flex; align-items:center;
+  justify-content:center; cursor:pointer; font-size:14px; transition:all .15s;
+  font-family:var(--mono);
+}
+.g-ctrl-btn:hover { border-color:var(--acc); color:var(--acc); }
+
+/* resize handle */
+.resize-handle {
+  height: 5px; background: var(--b1); cursor: row-resize;
+  flex-shrink:0; position:relative; transition:background .15s;
+}
+.resize-handle:hover, .resize-handle.dragging { background:var(--acc); }
+.resize-handle::before {
+  content:''; position:absolute; left:50%; top:50%;
+  transform:translate(-50%,-50%);
+  width:32px; height:2px; border-radius:1px;
+  background:rgba(255,255,255,.12);
+}
+
+/* triple table */
+.triple-table-wrap {
+  background:var(--s1); border-top:1px solid var(--b1);
+  display:flex; flex-direction:column; overflow:hidden;
+  flex-shrink:0;
+  height: 260px;
+  min-height: 80px;
+  max-height: 70vh;
+}
+.triple-table-header {
+  display:flex; align-items:center; gap:10px; padding:8px 14px;
+  border-bottom:1px solid var(--b1); flex-shrink:0;
+}
+.triple-table-title {
+  font-size:10px; font-weight:700; letter-spacing:1px;
+  text-transform:uppercase; color:var(--t3);
+}
+.triple-count-badge {
+  font-size:10px; font-family:var(--mono); color:var(--t2);
+  background:var(--s3); border:1px solid var(--b1);
+  padding:1px 7px; border-radius:10px;
+}
+.triple-search-mini {
+  display:flex; align-items:center; gap:6px; margin-left:auto;
+  background:var(--bg); border:1px solid var(--b1); border-radius:var(--r);
+  padding:4px 9px; transition:border-color .15s;
+}
+.triple-search-mini:focus-within { border-color:var(--acc); }
+.triple-search-mini input {
+  background:none; border:none; color:var(--t1);
+  font-family:var(--mono); font-size:11px; outline:none; width:160px;
+}
+.triple-search-mini input::placeholder { color:var(--t3); }
+
+/* table */
+.triple-table-scroll { flex:1; overflow-y:auto; overflow-x:auto; }
+.triple-table-scroll::-webkit-scrollbar { width:4px; height:4px; }
+.triple-table-scroll::-webkit-scrollbar-track { background:transparent; }
+.triple-table-scroll::-webkit-scrollbar-thumb { background:var(--b2); border-radius:2px; }
+table.tt {
+  width:100%; border-collapse:collapse; font-size:11.5px;
+}
+table.tt thead th {
+  padding:6px 12px; text-align:left;
+  font-size:9.5px; font-weight:700; letter-spacing:.8px;
+  text-transform:uppercase; color:var(--t3);
+  background:var(--s1); border-bottom:1px solid var(--b1);
+  position:sticky; top:0; z-index:1; white-space:nowrap;
+  cursor:pointer; user-select:none; transition:color .1s;
+}
+table.tt thead th:hover { color:var(--t1); }
+table.tt thead th .sort-icon { opacity:.4; margin-left:4px; font-size:8px; }
+table.tt thead th.sort-asc .sort-icon::after  { content:'↑'; opacity:1; color:var(--acc); }
+table.tt thead th.sort-desc .sort-icon::after { content:'↓'; opacity:1; color:var(--acc); }
+table.tt thead th:not(.sort-asc):not(.sort-desc) .sort-icon::after { content:'↕'; }
+table.tt tbody tr { border-bottom:1px solid rgba(255,255,255,.03); transition:background .08s; cursor:pointer; }
+table.tt tbody tr:hover { background:var(--s2); }
+table.tt tbody tr.active-row { background:rgba(91,141,240,.08); }
+table.tt td { padding:5px 12px; white-space:nowrap; max-width:200px; overflow:hidden; text-overflow:ellipsis; }
+.cell-entity {
+  font-weight:600; font-size:12px;
+}
+.cell-type-badge {
+  display:inline-flex; align-items:center;
+  padding:1px 7px; border-radius:10px;
+  font-size:9.5px; font-family:var(--mono); font-weight:500;
+}
+.cell-rel {
+  font-size:10px; font-family:var(--mono); font-weight:500;
+  padding:2px 7px; border-radius:4px; white-space:nowrap;
+  display:inline-block;
+}
+.cell-num {
+  font-family:var(--mono); font-size:11px; color:var(--t2); text-align:right;
+}
+.cell-bar-wrap { display:flex; align-items:center; gap:6px; }
+.cell-bar { height:4px; border-radius:2px; background:var(--acc); opacity:.6; }
+
+/* table empty */
+.tt-empty {
+  padding:28px; text-align:center; color:var(--t3); font-size:12px;
+}
+
+/* ══════════════════ RIGHT PANEL ══════════════════ */
+.right-panel {
+  width: 272px; flex-shrink:0;
+  background:var(--s1); border-left:1px solid var(--b1);
+  display:flex; flex-direction:column; overflow:hidden;
+}
+.rp-header { padding:12px 14px 10px; border-bottom:1px solid var(--b1); }
+.rp-entity-name {
+  font-size:16px; font-weight:700; letter-spacing:-.3px;
+  line-height:1.25; margin-bottom:6px;
+  word-break:break-word;
+}
+.rp-empty {
+  flex:1; display:flex; flex-direction:column;
+  align-items:center; justify-content:center;
+  gap:8px; color:var(--t3); padding:20px; text-align:center;
+}
+.rp-empty-icon { font-size:26px; opacity:.25; }
+.rp-empty-txt  { font-size:11.5px; line-height:1.7; }
+
+/* metrics grid */
+.rp-metrics {
+  display:grid; grid-template-columns:1fr 1fr;
+  gap:6px; padding:10px 14px; border-bottom:1px solid var(--b1);
+}
+.rp-metric {
+  background:var(--bg); border:1px solid var(--b1);
+  border-radius:var(--r); padding:8px 10px;
+}
+.rp-m-label {
+  font-size:9px; font-weight:700; letter-spacing:.8px;
+  text-transform:uppercase; color:var(--t3); margin-bottom:3px;
+}
+.rp-m-val {
+  font-size:21px; font-weight:700; font-family:var(--mono); line-height:1;
+}
+
+/* relations list */
+.rp-rels { flex:1; overflow-y:auto; }
+.rp-rels::-webkit-scrollbar { width:3px; }
+.rp-rels::-webkit-scrollbar-thumb { background:var(--b2); border-radius:2px; }
+.rp-section { border-bottom:1px solid var(--b1); }
+.rp-section-hd {
+  padding:8px 14px 4px;
+  font-size:9.5px; font-weight:700; letter-spacing:1px;
+  text-transform:uppercase; color:var(--t3);
+  display:flex; align-items:center; gap:6px;
+}
+.rp-cnt { background:var(--s2); border:1px solid var(--b1); border-radius:10px; padding:0 6px; font-size:9px; font-family:var(--mono); color:var(--t3); }
+.rp-rel-row {
+  display:flex; align-items:center; gap:6px; padding:5px 14px;
+  cursor:pointer; transition:background .1s;
+}
+.rp-rel-row:hover { background:var(--s2); }
+.rp-rel-arrow { font-family:var(--mono); font-size:9px; color:var(--t3); width:10px; flex-shrink:0; }
+.rp-rel-badge {
+  font-size:9.5px; font-family:var(--mono); font-weight:500;
+  padding:2px 6px; border-radius:3px; flex-shrink:0; white-space:nowrap;
+}
+.rp-rel-target { font-size:11.5px; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.rp-rel-freq { font-size:9px; font-family:var(--mono); color:var(--t3); flex-shrink:0; margin-left:auto; }
+
+/* ══════════════════ LOADING BAR ══════════════════ */
+.load-bar {
+  position:fixed; top:0; left:0; height:2px; background:var(--acc);
+  width:0; transition:width .3s; z-index:999;
+}
+
+/* ══════════════════ TOAST ══════════════════ */
+.toast {
+  position:fixed; bottom:18px; left:50%; transform:translateX(-50%);
+  background:var(--s2); border:1px solid var(--b2); border-radius:var(--r2);
+  padding:8px 18px; font-size:12px; z-index:700;
+  opacity:0; transition:opacity .2s; pointer-events:none;
+  box-shadow:0 8px 28px rgba(0,0,0,.5);
+}
+.toast.on { opacity:1; }
+
+/* ══════════════════ TOOLTIP ══════════════════ */
+.tip {
+  position:fixed; background:var(--s1); border:1px solid var(--b2);
+  border-radius:var(--r2); padding:10px 12px; font-size:11px;
+  pointer-events:none; z-index:500; max-width:180px;
+  box-shadow:0 8px 28px rgba(0,0,0,.6); opacity:0; transition:opacity .1s;
+}
+.tip.on { opacity:1; }
+.tip-name { font-weight:700; font-size:12px; margin-bottom:3px; }
+.tip-type { font-family:var(--mono); font-size:9px; margin-bottom:6px; }
+.tip-row  { display:flex; justify-content:space-between; gap:12px; font-size:10px; color:var(--t2); font-family:var(--mono); }
+
+@keyframes rowIn { from{opacity:0;transform:translateY(4px)} to{opacity:1;transform:none} }
+</style>
+</head>
+<body>
+
+<div class="load-bar" id="load-bar"></div>
+
+<!-- ══ TOPBAR ══ -->
+<div class="topbar">
+  <div class="logo">
+    <div class="logo-mark">
+      <svg viewBox="0 0 13 13" fill="none">
+        <circle cx="6.5" cy="2.5" r="1.6" fill="white"/>
+        <circle cx="2"   cy="10"  r="1.6" fill="white"/>
+        <circle cx="11"  cy="10"  r="1.6" fill="white"/>
+        <line x1="6.5" y1="4.1" x2="2.6"  y2="8.6" stroke="white" stroke-width="1.1"/>
+        <line x1="6.5" y1="4.1" x2="10.4" y2="8.6" stroke="white" stroke-width="1.1"/>
+        <line x1="3.6"  y1="10" x2="9.4"  y2="10"  stroke="white" stroke-width="1.1"/>
+      </svg>
+    </div>
+    KG Explorer
+  </div>
+  <div class="v-sep"></div>
+
+  <div class="search-wrap">
+    <div class="search-input-row">
+      <span class="search-icon">
+        <svg width="13" height="13" viewBox="0 0 13 13" fill="none">
+          <circle cx="5.5" cy="5.5" r="3.8" stroke="currentColor" stroke-width="1.5"/>
+          <line x1="8.5" y1="8.5" x2="12" y2="12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+        </svg>
+      </span>
+      <input id="search-input" placeholder="Tìm entity: BIDV, VinFast, Tim Cook..."
+        oninput="onSearchInput(this.value)" onkeydown="onSearchKey(event)"
+        autocomplete="off" spellcheck="false">
+      <div class="search-hint"><kbd>/</kbd> focus</div>
+    </div>
+    <div class="ac-drop" id="ac-drop"></div>
+  </div>
+
+  <div class="tb-stats" id="tb-stats">
+    <div class="tb-stat"><div class="dot" style="background:var(--t3)"></div>—</div>
+  </div>
+
+  <button class="btn btn-primary" onclick="document.getElementById('f-in').click()">
+    ↑ Upload JSON / CSV
+  </button>
+  <input type="file" id="f-in" accept=".json,.csv" style="display:none" onchange="handleFile(event)">
+  <button class="btn" onclick="loadDemo()">Demo</button>
+</div>
+
+<!-- ══ LAYOUT ══ -->
+<div class="layout">
+
+  <!-- LEFT -->
+  <div class="left-panel">
+
+    <!-- Depth + Limit -->
+    <div class="panel-section">
+      <div class="section-label">Ego-graph</div>
+      <div class="depth-row">
+        <span class="depth-row-label">Depth</span>
+        <div class="depth-seg">
+          <div class="depth-seg-btn on" data-d="1" onclick="setDepth(1)">1</div>
+          <div class="depth-seg-btn"    data-d="2" onclick="setDepth(2)">2</div>
+          <div class="depth-seg-btn"    data-d="3" onclick="setDepth(3)">3</div>
+        </div>
+      </div>
+      <div class="slider-row">
+        <label>Max nodes</label>
+        <input type="range" id="limit-slider" min="20" max="300" value="80" oninput="onLimitChange(this.value)">
+        <span class="sv" id="limit-val">80</span>
+      </div>
+    </div>
+
+    <!-- Relation filter -->
+    <div class="panel-section" style="padding-bottom:8px">
+      <div class="section-label">
+        Relation types
+        <span class="section-label-action" onclick="toggleAllRels()">toggle all</span>
+      </div>
+    </div>
+    <div class="rel-filter-list" id="rel-list"></div>
+
+    <!-- Recent -->
+    <div class="panel-section" style="margin-top:auto">
+      <div class="section-label">Recent</div>
+      <div class="hist-items" id="hist-list"></div>
+    </div>
+
+  </div>
+
+  <!-- CENTER -->
+  <div class="center-panel">
+
+    <!-- Graph canvas -->
+    <div class="graph-canvas" id="graph-canvas">
+      <svg id="gsvg"></svg>
+
+      <div class="g-empty" id="g-empty">
+        <div class="g-empty-icon">⬡</div>
+        <div class="g-empty-title">Knowledge Graph</div>
+        <div class="g-empty-sub">
+          Upload <code>triples.json</code> hoặc nhấn <strong>Demo</strong>,<br>
+          rồi search tên entity bất kỳ để hiển thị ego-graph
+        </div>
+      </div>
+
+      <div class="g-ctrl">
+        <div class="g-ctrl-btn" onclick="zoomIn()"  title="Zoom in">+</div>
+        <div class="g-ctrl-btn" onclick="zoomOut()" title="Zoom out">−</div>
+        <div class="g-ctrl-btn" onclick="fitView()" title="Reset" style="font-size:11px">⌂</div>
+      </div>
+    </div>
+
+    <!-- Resize handle -->
+    <div class="resize-handle" id="resize-handle"></div>
+
+    <!-- Triple table -->
+    <div class="triple-table-wrap" id="triple-table-wrap">
+      <div class="triple-table-header">
+        <span class="triple-table-title">Triples</span>
+        <span class="triple-count-badge" id="triple-count">0</span>
+        <div class="triple-search-mini">
+          <svg width="11" height="11" viewBox="0 0 11 11" fill="none">
+            <circle cx="4.5" cy="4.5" r="3.2" stroke="var(--t3)" stroke-width="1.3"/>
+            <line x1="7" y1="7" x2="10" y2="10" stroke="var(--t3)" stroke-width="1.3" stroke-linecap="round"/>
+          </svg>
+          <input id="tt-search" placeholder="Filter triples..." oninput="filterTable(this.value)">
+        </div>
+      </div>
+      <div class="triple-table-scroll" id="triple-table-scroll">
+        <table class="tt" id="tt">
+          <thead>
+            <tr>
+              <th onclick="sortTable('subject')"   data-col="subject">Subject<span class="sort-icon"></span></th>
+              <th onclick="sortTable('s_type')"    data-col="s_type">S·Type<span class="sort-icon"></span></th>
+              <th onclick="sortTable('relation')"  data-col="relation">Relation<span class="sort-icon"></span></th>
+              <th onclick="sortTable('object')"    data-col="object">Object<span class="sort-icon"></span></th>
+              <th onclick="sortTable('o_type')"    data-col="o_type">O·Type<span class="sort-icon"></span></th>
+              <th onclick="sortTable('frequency')" data-col="frequency">Freq<span class="sort-icon"></span></th>
+              <th onclick="sortTable('confidence')"data-col="confidence">Conf<span class="sort-icon"></span></th>
+            </tr>
+          </thead>
+          <tbody id="tt-body">
+            <tr><td colspan="7" class="tt-empty">Chưa có dữ liệu — upload file hoặc nhấn Demo</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- RIGHT -->
+  <div class="right-panel">
+    <div class="rp-header">
+      <div class="section-label">Entity Detail</div>
+    </div>
+    <div class="rp-empty" id="rp-empty">
+      <div class="rp-empty-icon">◎</div>
+      <div class="rp-empty-txt">Search hoặc click entity<br>để xem quan hệ chi tiết</div>
+    </div>
+    <div id="rp-content" style="display:none;flex-direction:column;overflow:hidden;flex:1"></div>
+  </div>
+
+</div>
+
+<div class="tip"   id="tip"></div>
+<div class="toast" id="toast"></div>
+
+<script>
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+//  CONSTANTS
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+const EC = {
+  ORGANIZATION:'#5b8df0',PERSON:'#fbbf24',LOCATION:'#34d399',
+  PRODUCT:'#f472b6',EVENT:'#a78bfa',INDUSTRY:'#2dd4bf',
+  MONEY:'#fb923c',DATE:'#94a3b8',PERCENT:'#67e8f9',UNKNOWN:'#4b5563',
+};
+const RC = {
+  'LÃNH_ĐẠO':'#f87171','HỢP_TÁC':'#5b8df0','ĐẦU_TƯ':'#fbbf24',
+  'SẢN_XUẤT':'#34d399','ĐẶT_TẠI':'#2dd4bf','THUỘC_NGÀNH':'#a78bfa',
+  'TỔ_CHỨC_SỰ_KIỆN':'#f472b6','CÓ_GIÁ_TRỊ':'#94a3b8',
+  'XẢY_RA_TẠI':'#fb923c','THAM_GIA':'#fde68a','TĂNG_TRƯỞNG':'#67e8f9',
+  'LIÊN_QUAN':'#2a3252','invest_in':'#fbbf24','partner_with':'#5b8df0',
+  'located_in':'#34d399',
+};
+const rc = r => RC[r] || '#4a5568';
+const ec = t => EC[t]  || '#4b5563';
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+//  STATE
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+let rawTriples   = [];
+let nodeIndex    = new Map();
+let currentRoot  = null;
+let egoDepth     = 1;
+let maxNodes     = 80;
+let hiddenRels   = new Set();
+let history      = [];
+let acIdx        = -1;
+let svgEl, gEl, zoomBeh, sim;
+
+// table state
+let tableRows    = [];   // current filtered+sorted rows
+let tableSortCol = 'frequency';
+let tableSortDir = 'desc';
+let tableQuery   = '';
+let tableSource  = [];   // all rows (from current ego or all)
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+//  DEMO DATA
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+const DEMO=[
+  {subject:"Vingroup",subject_type:"ORGANIZATION",relation:"LÃNH_ĐẠO",object:"Phạm Nhật Vượng",object_type:"PERSON",confidence:0.9,frequency:12},
+  {subject:"Vingroup",subject_type:"ORGANIZATION",relation:"SẢN_XUẤT",object:"VinFast",object_type:"PRODUCT",confidence:0.85,frequency:8},
+  {subject:"Vingroup",subject_type:"ORGANIZATION",relation:"THUỘC_NGÀNH",object:"bất động sản",object_type:"INDUSTRY",confidence:0.8,frequency:15},
+  {subject:"Vingroup",subject_type:"ORGANIZATION",relation:"ĐẶT_TẠI",object:"Hà Nội",object_type:"LOCATION",confidence:0.9,frequency:10},
+  {subject:"Vingroup",subject_type:"ORGANIZATION",relation:"ĐẦU_TƯ",object:"VinBrain",object_type:"ORGANIZATION",confidence:0.82,frequency:5},
+  {subject:"Vingroup",subject_type:"ORGANIZATION",relation:"HỢP_TÁC",object:"Google",object_type:"ORGANIZATION",confidence:0.75,frequency:3},
+  {subject:"Vingroup",subject_type:"ORGANIZATION",relation:"HỢP_TÁC",object:"Microsoft",object_type:"ORGANIZATION",confidence:0.7,frequency:2},
+  {subject:"VinFast",subject_type:"PRODUCT",relation:"ĐẶT_TẠI",object:"Hải Phòng",object_type:"LOCATION",confidence:0.88,frequency:6},
+  {subject:"VinFast",subject_type:"PRODUCT",relation:"ĐẶT_TẠI",object:"Mỹ",object_type:"LOCATION",confidence:0.78,frequency:4},
+  {subject:"VinFast",subject_type:"PRODUCT",relation:"CÓ_GIÁ_TRỊ",object:"2 tỷ USD",object_type:"MONEY",confidence:0.75,frequency:3},
+  {subject:"VinBrain",subject_type:"ORGANIZATION",relation:"THUỘC_NGÀNH",object:"công nghệ",object_type:"INDUSTRY",confidence:0.85,frequency:6},
+  {subject:"VinBrain",subject_type:"ORGANIZATION",relation:"HỢP_TÁC",object:"FPT",object_type:"ORGANIZATION",confidence:0.68,frequency:3},
+  {subject:"Phạm Nhật Vượng",subject_type:"PERSON",relation:"THAM_GIA",object:"HR Asia Awards 2025",object_type:"EVENT",confidence:0.7,frequency:2},
+  {subject:"BIDV",subject_type:"ORGANIZATION",relation:"HỢP_TÁC",object:"VPBank",object_type:"ORGANIZATION",confidence:0.8,frequency:7},
+  {subject:"BIDV",subject_type:"ORGANIZATION",relation:"THUỘC_NGÀNH",object:"ngân hàng",object_type:"INDUSTRY",confidence:0.9,frequency:20},
+  {subject:"BIDV",subject_type:"ORGANIZATION",relation:"ĐẶT_TẠI",object:"Hà Nội",object_type:"LOCATION",confidence:0.95,frequency:18},
+  {subject:"BIDV",subject_type:"ORGANIZATION",relation:"TĂNG_TRƯỞNG",object:"6.5%",object_type:"PERCENT",confidence:0.7,frequency:3},
+  {subject:"VPBank",subject_type:"ORGANIZATION",relation:"THUỘC_NGÀNH",object:"ngân hàng",object_type:"INDUSTRY",confidence:0.9,frequency:14},
+  {subject:"VPBank",subject_type:"ORGANIZATION",relation:"ĐẶT_TẠI",object:"TP.HCM",object_type:"LOCATION",confidence:0.88,frequency:9},
+  {subject:"VPBank",subject_type:"ORGANIZATION",relation:"LÃNH_ĐẠO",object:"Ngô Chí Dũng",object_type:"PERSON",confidence:0.85,frequency:6},
+  {subject:"Techcombank",subject_type:"ORGANIZATION",relation:"HỢP_TÁC",object:"BIDV",object_type:"ORGANIZATION",confidence:0.72,frequency:4},
+  {subject:"Techcombank",subject_type:"ORGANIZATION",relation:"THUỘC_NGÀNH",object:"ngân hàng",object_type:"INDUSTRY",confidence:0.9,frequency:11},
+  {subject:"FPT",subject_type:"ORGANIZATION",relation:"THUỘC_NGÀNH",object:"công nghệ",object_type:"INDUSTRY",confidence:0.92,frequency:16},
+  {subject:"FPT",subject_type:"ORGANIZATION",relation:"ĐẶT_TẠI",object:"Hà Nội",object_type:"LOCATION",confidence:0.9,frequency:12},
+  {subject:"FPT",subject_type:"ORGANIZATION",relation:"HỢP_TÁC",object:"Microsoft",object_type:"ORGANIZATION",confidence:0.78,frequency:5},
+  {subject:"FPT",subject_type:"ORGANIZATION",relation:"LÃNH_ĐẠO",object:"Trương Gia Bình",object_type:"PERSON",confidence:0.88,frequency:8},
+  {subject:"Viettel",subject_type:"ORGANIZATION",relation:"THUỘC_NGÀNH",object:"viễn thông",object_type:"INDUSTRY",confidence:0.95,frequency:22},
+  {subject:"Viettel",subject_type:"ORGANIZATION",relation:"ĐẶT_TẠI",object:"Hà Nội",object_type:"LOCATION",confidence:0.95,frequency:20},
+  {subject:"Viettel",subject_type:"ORGANIZATION",relation:"SẢN_XUẤT",object:"5G SA",object_type:"PRODUCT",confidence:0.8,frequency:6},
+  {subject:"Apple",subject_type:"ORGANIZATION",relation:"SẢN_XUẤT",object:"iPhone 17",object_type:"PRODUCT",confidence:0.9,frequency:10},
+  {subject:"Apple",subject_type:"ORGANIZATION",relation:"TỔ_CHỨC_SỰ_KIỆN",object:"WWDC 2024",object_type:"EVENT",confidence:0.92,frequency:9},
+  {subject:"Apple",subject_type:"ORGANIZATION",relation:"HỢP_TÁC",object:"Google",object_type:"ORGANIZATION",confidence:0.88,frequency:6},
+  {subject:"Apple",subject_type:"ORGANIZATION",relation:"LÃNH_ĐẠO",object:"Tim Cook",object_type:"PERSON",confidence:0.95,frequency:14},
+  {subject:"Apple",subject_type:"ORGANIZATION",relation:"CÓ_GIÁ_TRỊ",object:"1 tỷ USD",object_type:"MONEY",confidence:0.75,frequency:4},
+  {subject:"WWDC 2024",subject_type:"EVENT",relation:"XẢY_RA_TẠI",object:"San Jose",object_type:"LOCATION",confidence:0.85,frequency:5},
+  {subject:"Tim Cook",subject_type:"PERSON",relation:"THAM_GIA",object:"WWDC 2024",object_type:"EVENT",confidence:0.88,frequency:7},
+  {subject:"Google",subject_type:"ORGANIZATION",relation:"THUỘC_NGÀNH",object:"công nghệ",object_type:"INDUSTRY",confidence:0.95,frequency:18},
+  {subject:"Microsoft",subject_type:"ORGANIZATION",relation:"THUỘC_NGÀNH",object:"công nghệ",object_type:"INDUSTRY",confidence:0.95,frequency:16},
+  {subject:"Microsoft",subject_type:"ORGANIZATION",relation:"HỢP_TÁC",object:"Viettel",object_type:"ORGANIZATION",confidence:0.7,frequency:3},
+  {subject:"HR Asia Awards 2025",subject_type:"EVENT",relation:"XẢY_RA_TẠI",object:"TP.HCM",object_type:"LOCATION",confidence:0.82,frequency:4},
+];
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+//  INDEX
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+function buildIndex(triples) {
+  nodeIndex.clear();
+  const ensure = (id, type) => {
+    if (!nodeIndex.has(id)) nodeIndex.set(id, {id, type:type||'UNKNOWN', outgoing:[], incoming:[]});
+    else if (type && type!=='UNKNOWN') nodeIndex.get(id).type = type;
+  };
+  triples.forEach(t => {
+    const s=t.subject||'', o=t.object||t.obj||'';
+    if (!s||!o||s===o) return;
+    ensure(s, t.subject_type||'UNKNOWN');
+    ensure(o, t.object_type||t.obj_type||'UNKNOWN');
+    nodeIndex.get(s).outgoing.push({target:o, relation:t.relation||'LIÊN_QUAN', conf:parseFloat(t.confidence)||0.5, freq:parseInt(t.frequency)||1});
+    nodeIndex.get(o).incoming.push({source:s, relation:t.relation||'LIÊN_QUAN', conf:parseFloat(t.confidence)||0.5, freq:parseInt(t.frequency)||1});
+  });
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+//  EGO EXTRACT
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+function extractEgo(rootId, maxDepth, limit) {
+  const visited = new Map();
+  const queue   = [[rootId, 0]];
+  const links   = [];
+  while (queue.length && visited.size < limit*2) {
+    const [id, d] = queue.shift();
+    if (visited.has(id)) continue;
+    visited.set(id, d);
+    if (d >= maxDepth) continue;
+    const node = nodeIndex.get(id);
+    if (!node) continue;
+    [...node.outgoing, ...node.incoming.map(e=>({...e, target:id, source:e.source, _in:true}))]
+      .filter(e => !hiddenRels.has(e.relation))
+      .sort((a,b)=>(b.freq*b.conf)-(a.freq*a.conf))
+      .slice(0,40)
+      .forEach(e => {
+        const neighbor = e._in ? e.source : e.target;
+        if (!visited.has(neighbor)) queue.push([neighbor, d+1]);
+        if (!e._in) links.push({source:id, target:e.target, relation:e.relation, conf:e.conf, freq:e.freq});
+        else        links.push({source:e.source, target:id,  relation:e.relation, conf:e.conf, freq:e.freq});
+      });
+  }
+  const nodeIds = [...visited.keys()].slice(0, limit);
+  const nodeSet = new Set(nodeIds);
+  const seen    = new Set();
+  const dedup   = links.filter(l => {
+    if (!nodeSet.has(l.source)||!nodeSet.has(l.target)) return false;
+    const k=`${l.source}||${l.relation}||${l.target}`;
+    if (seen.has(k)) return false; seen.add(k); return true;
+  });
+  return { nodes: nodeIds.map(id=>({...nodeIndex.get(id), depthFromRoot:visited.get(id)})), links: dedup };
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+//  RENDER EGO GRAPH
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+function renderEgo(rootId) {
+  currentRoot = rootId;
+  const {nodes, links} = extractEgo(rootId, egoDepth, maxNodes);
+  if (!nodes.length) { toast('Không tìm thấy: '+rootId); return; }
+
+  document.getElementById('g-empty').style.display = 'none';
+
+  const canvas = document.getElementById('graph-canvas');
+  const W=canvas.clientWidth, H=canvas.clientHeight;
+
+  svgEl.selectAll('*').remove();
+  const defs = svgEl.append('defs');
+  [...new Set(links.map(l=>l.relation))].forEach(r=>{
+    const cid='ar_'+r.replace(/\W/g,'_');
+    defs.append('marker').attr('id',cid)
+      .attr('viewBox','0 -4 8 8').attr('refX',15).attr('refY',0)
+      .attr('markerWidth',5).attr('markerHeight',5).attr('orient','auto')
+      .append('path').attr('d','M0,-4L8,0L0,4').attr('fill',rc(r)).attr('opacity',.9);
+  });
+
+  gEl.selectAll('*').remove();
+
+  const lnkSel = gEl.append('g').selectAll('line').data(links).enter().append('line')
+    .attr('stroke', d=>rc(d.relation))
+    .attr('stroke-opacity', .5)
+    .attr('stroke-width', d=>.7+Math.log1p(d.freq||1)*.55)
+    .attr('marker-end', d=>`url(#ar_${d.relation.replace(/\W/g,'_')})`);
+  lnkSel.append('title').text(d=>`${d.relation}\nconf:${d.conf?.toFixed(2)} freq:${d.freq}`);
+
+  const nodeR = d => d.id===rootId ? 16 : 5+Math.sqrt((nodeIndex.get(d.id)?.outgoing.length||0)+(nodeIndex.get(d.id)?.incoming.length||0))*1.3;
+
+  const ndSel = gEl.append('g').selectAll('g').data(nodes).enter().append('g')
+    .style('cursor','pointer')
+    .on('click',(e,d)=>{ e.stopPropagation(); if(d.id===rootId) showRightPanel(d); else renderEgo(d.id); })
+    .on('mouseover',(e,d)=>showTip(e,d))
+    .on('mousemove', e=>moveTip(e))
+    .on('mouseout', ()=>hideTip())
+    .call(d3.drag()
+      .on('start',(e,d)=>{ if(!e.active) sim.alphaTarget(.3).restart(); d.fx=d.x; d.fy=d.y; })
+      .on('drag', (e,d)=>{ d.fx=e.x; d.fy=e.y; })
+      .on('end',  (e,d)=>{ if(!e.active) sim.alphaTarget(0); d.fx=null; d.fy=null; }));
+
+  // glow
+  ndSel.append('circle')
+    .attr('r', d=>nodeR(d)+(d.id===rootId?8:4))
+    .attr('fill', d=>ec(d.type))
+    .attr('opacity', d=>d.id===rootId?.18:.08);
+  // main
+  ndSel.append('circle')
+    .attr('r', d=>nodeR(d))
+    .attr('fill', d=>ec(d.type))
+    .attr('stroke', d=>d.id===rootId?'rgba(255,255,255,.8)':ec(d.type))
+    .attr('stroke-width', d=>d.id===rootId?2:.4)
+    .attr('opacity', .92);
+  // label
+  ndSel.append('text')
+    .text(d=>d.id===rootId?d.id:(d.id.length>13?d.id.slice(0,11)+'…':d.id))
+    .attr('text-anchor','middle')
+    .attr('dy', d=>-(nodeR(d)+5))
+    .attr('font-family','Inter,sans-serif')
+    .attr('font-size', d=>d.id===rootId?10.5:8.5)
+    .attr('font-weight', d=>d.id===rootId?700:500)
+    .attr('fill', d=>d.id===rootId?'#fff':'rgba(200,210,230,.75)')
+    .attr('pointer-events','none');
+
+  if (sim) sim.stop();
+  sim = d3.forceSimulation(nodes)
+    .force('link', d3.forceLink(links).id(d=>d.id).distance(d=>{
+      const ir=d.source.id===rootId||d.target.id===rootId; return ir?95:65;
+    }).strength(.5))
+    .force('charge', d3.forceManyBody().strength(-200))
+    .force('center', d3.forceCenter(W/2, H/2))
+    .force('collision', d3.forceCollide(d=>nodeR(d)+7))
+    .on('tick', ()=>{
+      lnkSel.attr('x1',d=>d.source.x).attr('y1',d=>d.source.y)
+             .attr('x2',d=>d.target.x).attr('y2',d=>d.target.y);
+      ndSel.attr('transform',d=>`translate(${d.x},${d.y})`);
+    });
+
+  // update table to show ego triples only
+  const egoIds = new Set(nodes.map(n=>n.id));
+  tableSource = rawTriples.filter(t=>{
+    const s=t.subject||'', o=t.object||t.obj||'';
+    return egoIds.has(s)||egoIds.has(o);
+  });
+  renderTable();
+
+  showRightPanel({id:rootId, ...nodeIndex.get(rootId)});
+  addHistory(rootId);
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+//  RIGHT PANEL
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+function showRightPanel(d) {
+  const nd = nodeIndex.get(d.id);
+  if (!nd) return;
+  const color = ec(nd.type);
+  const out = nd.outgoing.filter(e=>!hiddenRels.has(e.relation));
+  const inc = nd.incoming.filter(e=>!hiddenRels.has(e.relation));
+
+  const byRel = arr => {
+    const m={};
+    arr.forEach(e=>{ (m[e.relation]||(m[e.relation]=[])).push(e); });
+    return m;
+  };
+
+  const badge = r => {
+    const c=rc(r);
+    return `<span class="rp-rel-badge" style="background:${c}1a;color:${c};border:1px solid ${c}33">${r}</span>`;
+  };
+
+  const section = (title, map, arrow) => {
+    const total = Object.values(map).reduce((a,b)=>a+b.length,0);
+    if (!total) return '';
+    let h = `<div class="rp-section"><div class="rp-section-hd">${title}<span class="rp-cnt">${total}</span></div>`;
+    Object.entries(map).sort((a,b)=>b[1].length-a[1].length).forEach(([rel,items])=>{
+      items.sort((a,b)=>(b.freq*b.conf)-(a.freq*a.conf)).forEach((e,i)=>{
+        const other  = arrow==='→'?e.target:e.source;
+        const ocolor = ec(nodeIndex.get(other)?.type||'UNKNOWN');
+        h+=`<div class="rp-rel-row" style="animation:rowIn .12s ease ${i*.02}s both" onclick="renderEgo('${other.replace(/'/g,"\\'")}')" >
+          <span class="rp-rel-arrow">${arrow}</span>
+          ${badge(rel)}
+          <span class="rp-rel-target" style="color:${ocolor}">${other}</span>
+          <span class="rp-rel-freq">${e.freq}</span>
+        </div>`;
+      });
+    });
+    return h+'</div>';
+  };
+
+  document.getElementById('rp-empty').style.display='none';
+  const rc2 = document.getElementById('rp-content');
+  rc2.style.display='flex';
+  rc2.innerHTML=`
+    <div class="rp-header">
+      <div class="rp-entity-name">${d.id}</div>
+      <span style="display:inline-flex;align-items:center;gap:4px;padding:3px 9px;border-radius:20px;font-size:10px;font-family:var(--mono);font-weight:600;background:${color}1a;color:${color};border:1px solid ${color}33">${nd.type}</span>
+    </div>
+    <div class="rp-metrics">
+      <div class="rp-metric"><div class="rp-m-label">Outgoing</div><div class="rp-m-val" style="color:${color}">${out.length}</div></div>
+      <div class="rp-metric"><div class="rp-m-label">Incoming</div><div class="rp-m-val" style="color:${color}">${inc.length}</div></div>
+      <div class="rp-metric"><div class="rp-m-label">Total</div><div class="rp-m-val">${out.length+inc.length}</div></div>
+      <div class="rp-metric"><div class="rp-m-label">Rel types</div><div class="rp-m-val">${new Set([...out,...inc].map(e=>e.relation)).size}</div></div>
+    </div>
+    <div class="rp-rels">
+      ${section('Outgoing',byRel(out),'→')}
+      ${section('Incoming',byRel(inc),'←')}
+    </div>
+  `;
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+//  TRIPLE TABLE
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+const PAGE = 200;
+let tablePage = 0;
+
+function renderTable() {
+  const q = tableQuery.toLowerCase();
+  let rows = tableSource.map(t => ({
+    subject:   t.subject||'',
+    s_type:    t.subject_type||t.s_type||'UNKNOWN',
+    relation:  t.relation||'',
+    object:    t.object||t.obj||'',
+    o_type:    t.object_type||t.obj_type||'UNKNOWN',
+    frequency: parseInt(t.frequency)||1,
+    confidence:parseFloat(t.confidence)||0,
+  }));
+
+  // filter
+  if (q) rows = rows.filter(r =>
+    r.subject.toLowerCase().includes(q) ||
+    r.object.toLowerCase().includes(q)  ||
+    r.relation.toLowerCase().includes(q)
+  );
+
+  // sort
+  rows.sort((a,b) => {
+    const av=a[tableSortCol], bv=b[tableSortCol];
+    if (typeof av==='number') return tableSortDir==='asc'?av-bv:bv-av;
+    return tableSortDir==='asc'?String(av).localeCompare(String(bv)):String(bv).localeCompare(String(av));
+  });
+
+  tableRows = rows;
+  tablePage = 0;
+  renderTablePage();
+  document.getElementById('triple-count').textContent = rows.length.toLocaleString();
+
+  // update sort icons
+  document.querySelectorAll('table.tt thead th').forEach(th => {
+    th.classList.remove('sort-asc','sort-desc');
+    if (th.dataset.col===tableSortCol) th.classList.add(tableSortDir==='asc'?'sort-asc':'sort-desc');
+  });
+}
+
+const maxFreq = () => tableRows.reduce((m,r)=>Math.max(m,r.frequency),1);
+
+function renderTablePage() {
+  const slice = tableRows.slice(0, PAGE*(tablePage+1));
+  const mf = maxFreq();
+
+  if (!slice.length) {
+    document.getElementById('tt-body').innerHTML =
+      `<tr><td colspan="7" class="tt-empty">Không có triple nào — thử tìm entity khác</td></tr>`;
+    return;
+  }
+
+  document.getElementById('tt-body').innerHTML = slice.map((r,i) => {
+    const sc  = ec(r.s_type), oc = ec(r.o_type), relc = rc(r.relation);
+    const bar = Math.round((r.frequency/mf)*80);
+    return `<tr onclick="onRowClick('${r.subject.replace(/'/g,"\\'")}','${r.object.replace(/'/g,"\\'")}')" style="animation:rowIn .1s ease ${Math.min(i,.25)*40}ms both">
+      <td><span class="cell-entity" style="color:${sc}">${r.subject}</span></td>
+      <td><span class="cell-type-badge" style="background:${sc}18;color:${sc};border:1px solid ${sc}30">${r.s_type}</span></td>
+      <td><span class="cell-rel" style="background:${relc}18;color:${relc};border:1px solid ${relc}30">${r.relation}</span></td>
+      <td><span class="cell-entity" style="color:${oc}">${r.object}</span></td>
+      <td><span class="cell-type-badge" style="background:${oc}18;color:${oc};border:1px solid ${oc}30">${r.o_type}</span></td>
+      <td><div class="cell-bar-wrap"><div class="cell-bar" style="width:${bar}px"></div><span class="cell-num">${r.frequency}</span></div></td>
+      <td><span class="cell-num">${r.confidence.toFixed(2)}</span></td>
+    </tr>`;
+  }).join('');
+
+  // infinite scroll
+  const scroll = document.getElementById('triple-table-scroll');
+  scroll.onscroll = () => {
+    if (scroll.scrollTop+scroll.clientHeight >= scroll.scrollHeight-20) {
+      if ((tablePage+1)*PAGE < tableRows.length) { tablePage++; renderTablePage(); }
+    }
+  };
+}
+
+function onRowClick(subj, obj) {
+  // highlight graph nodes if they exist in current ego
+  renderEgo(subj);
+}
+
+function sortTable(col) {
+  if (tableSortCol===col) tableSortDir = tableSortDir==='asc'?'desc':'asc';
+  else { tableSortCol=col; tableSortDir='desc'; }
+  renderTable();
+}
+
+function filterTable(q) {
+  tableQuery = q;
+  renderTable();
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+//  SEARCH / AUTOCOMPLETE
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+function onSearchInput(val) {
+  acIdx = -1;
+  const q = val.trim().toLowerCase();
+  const ac = document.getElementById('ac-drop');
+  if (!q || !nodeIndex.size) { ac.innerHTML=''; return; }
+  const res=[];
+  nodeIndex.forEach((nd,id)=>{
+    const l=id.toLowerCase();
+    if (!l.includes(q)) return;
+    const score=(l.startsWith(q)?1000:0)+nd.outgoing.length+nd.incoming.length;
+    res.push({id,nd,score});
+  });
+  res.sort((a,b)=>b.score-a.score);
+  const top=res.slice(0,10);
+  if (!top.length){ac.innerHTML='';return;}
+  ac.innerHTML=top.map((r,i)=>{
+    const c=ec(r.nd.type), tot=r.nd.outgoing.length+r.nd.incoming.length;
+    return `<div class="ac-row" data-id="${r.id}" data-idx="${i}"
+      onmousedown="event.preventDefault();selectEntity('${r.id.replace(/'/g,"\\'")}')"
+      onmouseover="acIdx=${i};hiAC()">
+      <div class="ac-row-dot" style="background:${c}"></div>
+      <span class="ac-row-name">${hlMatch(r.id,val.trim())}</span>
+      <span class="ac-row-type">${r.nd.type}</span>
+      <span class="ac-row-cnt">${tot}</span>
+    </div>`;
+  }).join('');
+}
+
+function hlMatch(text,q){
+  const i=text.toLowerCase().indexOf(q.toLowerCase());
+  if(i<0) return text;
+  return text.slice(0,i)+`<strong style="color:var(--acc)">${text.slice(i,i+q.length)}</strong>`+text.slice(i+q.length);
+}
+
+function onSearchKey(e){
+  const ac=document.getElementById('ac-drop');
+  const items=ac.querySelectorAll('.ac-row');
+  if(e.key==='ArrowDown'){acIdx=Math.min(acIdx+1,items.length-1);hiAC();e.preventDefault();}
+  else if(e.key==='ArrowUp'){acIdx=Math.max(acIdx-1,0);hiAC();e.preventDefault();}
+  else if(e.key==='Enter'){
+    if(acIdx>=0&&items[acIdx]) selectEntity(items[acIdx].dataset.id);
+    else{const v=e.target.value.trim();if(v)selectEntity(v);}
+  }
+  else if(e.key==='Escape'){ac.innerHTML='';}
+}
+function hiAC(){document.querySelectorAll('.ac-row').forEach((el,i)=>el.classList.toggle('hi',i===acIdx));}
+
+function selectEntity(id){
+  document.getElementById('search-input').value=id;
+  document.getElementById('ac-drop').innerHTML='';
+  renderEgo(id);
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+//  HISTORY
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+function addHistory(id){
+  history=[id,...history.filter(x=>x!==id)].slice(0,6);
+  renderHistory();
+}
+function renderHistory(){
+  document.getElementById('hist-list').innerHTML=history.map(id=>{
+    const nd=nodeIndex.get(id);
+    const c=nd?(ec(nd.type)):'#4b5563';
+    return `<div class="hist-chip" onclick="selectEntity('${id.replace(/'/g,"\\'")}')" >
+      <div class="hist-chip-dot" style="background:${c}"></div>
+      <span class="hist-chip-name">${id}</span>
+    </div>`;
+  }).join('');
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+//  RELATION FILTER
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+function renderRelList(){
+  const counts=new Map();
+  nodeIndex.forEach(nd=>nd.outgoing.forEach(e=>counts.set(e.relation,(counts.get(e.relation)||0)+1)));
+  const sorted=[...counts.entries()].sort((a,b)=>b[1]-a[1]);
+  document.getElementById('rel-list').innerHTML=sorted.map(([r,cnt])=>`
+    <div class="rel-item ${hiddenRels.has(r)?'off':''}" onclick="toggleRel('${r}')" data-rel="${r}">
+      <div class="rel-item-check"></div>
+      <div class="rel-item-dot" style="background:${rc(r)}"></div>
+      <span class="rel-item-name">${r}</span>
+      <span class="rel-item-cnt">${cnt.toLocaleString()}</span>
+    </div>`).join('');
+}
+function toggleRel(r){
+  if(hiddenRels.has(r))hiddenRels.delete(r);else hiddenRels.add(r);
+  document.querySelector(`.rel-item[data-rel="${r}"]`)?.classList.toggle('off');
+  if(currentRoot) renderEgo(currentRoot);
+}
+function toggleAllRels(){
+  const all=[...document.querySelectorAll('.rel-item')].map(el=>el.dataset.rel);
+  if(hiddenRels.size===0)all.forEach(r=>hiddenRels.add(r));else hiddenRels.clear();
+  renderRelList();
+  if(currentRoot)renderEgo(currentRoot);
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+//  DEPTH / LIMIT
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+function setDepth(d){
+  egoDepth=d;
+  document.querySelectorAll('.depth-seg-btn').forEach(el=>el.classList.toggle('on',+el.dataset.d===d));
+  if(currentRoot)renderEgo(currentRoot);
+}
+function onLimitChange(v){
+  maxNodes=+v;
+  document.getElementById('limit-val').textContent=v;
+  if(currentRoot)renderEgo(currentRoot);
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+//  ZOOM
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+function zoomIn() {svgEl.transition().duration(220).call(zoomBeh.scaleBy,1.35);}
+function zoomOut(){svgEl.transition().duration(220).call(zoomBeh.scaleBy,0.74);}
+function fitView(){
+  const c=document.getElementById('graph-canvas');
+  svgEl.transition().duration(380).call(zoomBeh.transform,
+    d3.zoomIdentity.translate(c.clientWidth/2,c.clientHeight/2).scale(.85)
+      .translate(-c.clientWidth/2,-c.clientHeight/2));
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+//  TOOLTIP
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+function showTip(e,d){
+  const nd=nodeIndex.get(d.id), c=ec(nd?.type);
+  const out=nd?.outgoing.length||0, inc=nd?.incoming.length||0;
+  const tip=document.getElementById('tip');
+  tip.innerHTML=`<div class="tip-name">${d.id}</div>
+    <div class="tip-type" style="color:${c}">${nd?.type||'UNKNOWN'}</div>
+    <div class="tip-row"><span>Outgoing</span><span>${out}</span></div>
+    <div class="tip-row"><span>Incoming</span><span>${inc}</span></div>
+    <div class="tip-row"><span>Total</span><span>${out+inc}</span></div>`;
+  tip.classList.add('on'); moveTip(e);
+}
+function moveTip(e){const t=document.getElementById('tip');t.style.left=(e.clientX+14)+'px';t.style.top=(e.clientY-8)+'px';}
+function hideTip(){document.getElementById('tip').classList.remove('on');}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+//  STATS BAR
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+function updateStats(){
+  const rels=new Set(); nodeIndex.forEach(nd=>nd.outgoing.forEach(e=>rels.add(e.relation)));
+  document.getElementById('tb-stats').innerHTML=`
+    <div class="tb-stat"><div class="dot" style="background:var(--acc)"></div>${nodeIndex.size.toLocaleString()} entities</div>
+    <div class="tb-stat"><div class="dot" style="background:var(--green)"></div>${rawTriples.length.toLocaleString()} triples</div>
+    <div class="tb-stat"><div class="dot" style="background:var(--amber)"></div>${rels.size} relations</div>`;
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+//  LOAD
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+function loadTriples(triples){
+  setLoad(true);
+  setTimeout(()=>{
+    rawTriples=triples; buildIndex(triples);
+    tableSource=triples; renderTable();
+    updateStats(); renderRelList();
+    setLoad(false);
+    toast(`Loaded ${triples.length.toLocaleString()} triples`);
+  },50);
+}
+function loadDemo(){loadTriples(DEMO);setTimeout(()=>selectEntity('Vingroup'),300);}
+
+function handleFile(e){
+  const file=e.target.files[0]; if(!file)return;
+  toast('Đang đọc file...');
+  const r=new FileReader();
+  r.onload=ev=>parseFile(ev.target.result,file.name);
+  r.readAsText(file,'utf-8'); e.target.value='';
+}
+function parseFile(text,name){
+  try{
+    let t;
+    if(name.endsWith('.json')){let d=JSON.parse(text);if(d.triples)d=d.triples;t=Array.isArray(d)?d:[];}
+    else{
+      const lines=text.trim().split('\n');
+      const hdr=lines[0].split(',').map(h=>h.replace(/"/g,'').trim());
+      t=lines.slice(1).map(line=>{
+        const vals=(line.match(/(\".*?\"|[^,]+)(?=,|$)/g)||[]);
+        const o={};hdr.forEach((h,i)=>{o[h]=(vals[i]||'').replace(/"/g,'').trim();});return o;
+      });
+    }
+    loadTriples(t);
+  }catch(err){toast('Lỗi parse: '+err.message);}
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+//  RESIZE HANDLE
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+(function initResize(){
+  const handle = document.getElementById('resize-handle');
+  const wrap   = document.getElementById('triple-table-wrap');
+  const canvas = document.getElementById('graph-canvas');
+  let startY, startH;
+
+  handle.addEventListener('mousedown', e=>{
+    startY=e.clientY; startH=wrap.offsetHeight;
+    handle.classList.add('dragging');
+    document.addEventListener('mousemove', onDrag);
+    document.addEventListener('mouseup', ()=>{
+      handle.classList.remove('dragging');
+      document.removeEventListener('mousemove', onDrag);
+    },{once:true});
+  });
+
+  function onDrag(e){
+    const delta=startY-e.clientY;
+    const newH=Math.max(80,Math.min(window.innerHeight*.7, startH+delta));
+    wrap.style.height=newH+'px';
+  }
+})();
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+//  UTILS
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+let toastT;
+function toast(msg){
+  const el=document.getElementById('toast');
+  el.textContent=msg; el.classList.add('on');
+  clearTimeout(toastT); toastT=setTimeout(()=>el.classList.remove('on'),2600);
+}
+function setLoad(on){
+  const b=document.getElementById('load-bar');
+  b.style.width=on?'70%':'100%';
+  if(!on)setTimeout(()=>{b.style.width='0';b.style.transition='none';setTimeout(()=>b.style.transition='width .3s',50);},280);
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+//  INIT
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+function init(){
+  svgEl=d3.select('#gsvg');
+  zoomBeh=d3.zoom().scaleExtent([.05,5]).on('zoom',e=>gEl.attr('transform',e.transform));
+  svgEl.call(zoomBeh);
+  gEl=svgEl.append('g');
+  document.addEventListener('keydown',e=>{
+    if(e.key==='/'&&document.activeElement.tagName!=='INPUT'){
+      e.preventDefault(); document.getElementById('search-input').focus();
+    }
+  });
+}
+init();
+</script>
+</body>
+</html>

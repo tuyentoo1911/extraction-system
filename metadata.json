@@ -1,0 +1,5 @@
+{
+  "name": "Knowledge Graph Extractor",
+  "description": "Hệ thống trích xuất thông tin từ tài liệu, nhận diện thực thể, xác định mối quan hệ và xây dựng đồ thị tri thức tự động.",
+  "requestFramePermissions": []
+}

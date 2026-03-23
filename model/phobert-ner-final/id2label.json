@@ -1,0 +1,21 @@
+{
+  "0": "O",
+  "1": "B-DATE",
+  "2": "B-EVENT",
+  "3": "B-INDUSTRY",
+  "4": "B-LOCATION",
+  "5": "B-MONEY",
+  "6": "B-ORGANIZATION",
+  "7": "B-PERCENT",
+  "8": "B-PERSON",
+  "9": "B-PRODUCT",
+  "10": "I-DATE",
+  "11": "I-EVENT",
+  "12": "I-INDUSTRY",
+  "13": "I-LOCATION",
+  "14": "I-MONEY",
+  "15": "I-ORGANIZATION",
+  "16": "I-PERCENT",
+  "17": "I-PERSON",
+  "18": "I-PRODUCT"
+}

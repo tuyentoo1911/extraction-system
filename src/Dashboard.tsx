@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ArrowLeft, Network, Database, Code, Lightbulb, MessageSquare, Sparkles, Tags, BarChart3, PanelBottomOpen } from 'lucide-react';
+import { ArrowLeft, CircleDot, Network, Database, Code, Lightbulb, MessageSquare, Sparkles, Tags, BarChart3, PanelBottomOpen } from 'lucide-react';
 import { callExtract, callMetrics, callPredictLinks } from './lib/ai';
 import InputPanel from './components/InputPanel';
 import TabButton from './components/TabButton';
@@ -89,8 +89,8 @@ export default function Dashboard({ onBack }: { onBack: () => void }) {
               onClick={onBack}
               className="flex items-center gap-2 font-mono text-xs font-bold tracking-widest uppercase hover:text-[#f25f22] transition-colors"
             >
-              <ArrowLeft className="w-4 h-4" />
-              <span className="hidden sm:inline">Quay lại</span>
+              <CircleDot className="w-4 h-4" />
+              <span>KGE.SYS</span>
             </button>
           </div>
           <div className="font-mono text-xs tracking-widest uppercase text-black/40 hidden sm:block">

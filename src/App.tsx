@@ -4,7 +4,7 @@ import { motion } from 'motion/react';
 import Dashboard from './Dashboard';
 
 export default function App() {
-  const [currentView, setCurrentView] = useState<'landing' | 'app'>('landing');
+  const [currentView, setCurrentView] = useState<'landing' | 'app'>('app');
 
   if (currentView === 'app') {
     return <Dashboard onBack={() => setCurrentView('landing')} />;

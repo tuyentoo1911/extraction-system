@@ -1,0 +1,556 @@
+﻿{
+  "graph": {
+    "nodes": 7288,
+    "edges_unique": 6226,
+    "density": 0.0001172335679812342,
+    "strongly_connected_components": 6784,
+    "weakly_connected_components": 1895,
+    "relation_types": 12
+  },
+  "top_by_degree": [
+    {
+      "node": "Việt Nam",
+      "entity_type": "LOCATION",
+      "in_degree": 14,
+      "out_degree": 93,
+      "degree": 107,
+      "betweenness": 0.0007723789283465915,
+      "pagerank": 0.0006633141198670662
+    },
+    {
+      "node": "FPT",
+      "entity_type": "ORGANIZATION",
+      "in_degree": 48,
+      "out_degree": 43,
+      "degree": 91,
+      "betweenness": 0.0016453159610906615,
+      "pagerank": 0.0031114750343618027
+    },
+    {
+      "node": "Apple",
+      "entity_type": "ORGANIZATION",
+      "in_degree": 19,
+      "out_degree": 54,
+      "degree": 73,
+      "betweenness": 0.0015872143640286761,
+      "pagerank": 0.001028640935419838
+    },
+    {
+      "node": "Viettel",
+      "entity_type": "ORGANIZATION",
+      "in_degree": 32,
+      "out_degree": 37,
+      "degree": 69,
+      "betweenness": 0.0018634793942780379,
+      "pagerank": 0.0026050955729406363
+    },
+    {
+      "node": "công nghiệp",
+      "entity_type": "INDUSTRY",
+      "in_degree": 53,
+      "out_degree": 4,
+      "degree": 57,
+      "betweenness": 3.9327157538151576e-05,
+      "pagerank": 0.003328305214685268
+    },
+    {
+      "node": "Vietlott",
+      "entity_type": "ORGANIZATION",
+      "in_degree": 0,
+      "out_degree": 52,
+      "degree": 52,
+      "betweenness": 0.0,
+      "pagerank": 7.422642943547452e-05
+    },
+    {
+      "node": "Trung Quốc",
+      "entity_type": "LOCATION",
+      "in_degree": 5,
+      "out_degree": 46,
+      "degree": 51,
+      "betweenness": 0.00036311981285998805,
+      "pagerank": 0.0002523407685512451
+    },
+    {
+      "node": "UBND",
+      "entity_type": "ORGANIZATION",
+      "in_degree": 27,
+      "out_degree": 15,
+      "degree": 42,
+      "betweenness": 0.0004081322685317081,
+      "pagerank": 0.0019828821158211153
+    },
+    {
+      "node": "Google",
+      "entity_type": "ORGANIZATION",
+      "in_degree": 18,
+      "out_degree": 22,
+      "degree": 40,
+      "betweenness": 0.0014008297549503532,
+      "pagerank": 0.001388661619127133
+    },
+    {
+      "node": "VPBank",
+      "entity_type": "ORGANIZATION",
+      "in_degree": 13,
+      "out_degree": 26,
+      "degree": 39,
+      "betweenness": 0.000893876119213385,
+      "pagerank": 0.0008373889655180397
+    },
+    {
+      "node": "Nvidia",
+      "entity_type": "ORGANIZATION",
+      "in_degree": 13,
+      "out_degree": 25,
+      "degree": 38,
+      "betweenness": 0.001266087003785371,
+      "pagerank": 0.0005833363276365551
+    },
+    {
+      "node": "Mỹ",
+      "entity_type": "LOCATION",
+      "in_degree": 15,
+      "out_degree": 22,
+      "degree": 37,
+      "betweenness": 0.00023360909777524286,
+      "pagerank": 0.0014273120928418323
+    },
+    {
+      "node": "năm",
+      "entity_type": "DATE",
+      "in_degree": 1,
+      "out_degree": 34,
+      "degree": 35,
+      "betweenness": 1.2807694983689212e-06,
+      "pagerank": 0.00019158632435453297
+    },
+    {
+      "node": "công nghệ",
+      "entity_type": "INDUSTRY",
+      "in_degree": 32,
+      "out_degree": 1,
+      "degree": 33,
+      "betweenness": 9.41742278212442e-06,
+      "pagerank": 0.0021496979737553063
+    },
+    {
+      "node": "Techcombank",
+      "entity_type": "ORGANIZATION",
+      "in_degree": 11,
+      "out_degree": 22,
+      "degree": 33,
+      "betweenness": 7.94830482811301e-06,
+      "pagerank": 0.0008465551064686619
+    },
+    {
+      "node": "Samsung",
+      "entity_type": "ORGANIZATION",
+      "in_degree": 9,
+      "out_degree": 22,
+      "degree": 31,
+      "betweenness": 0.001305097915297524,
+      "pagerank": 0.00046259647111708524
+    },
+    {
+      "node": "Huawei",
+      "entity_type": "ORGANIZATION",
+      "in_degree": 6,
+      "out_degree": 24,
+      "degree": 30,
+      "betweenness": 0.0002512011126014736,
+      "pagerank": 0.0003287310507696161
+    },
+    {
+      "node": "Bộ Công an",
+      "entity_type": "ORGANIZATION",
+      "in_degree": 14,
+      "out_degree": 14,
+      "degree": 28,
+      "betweenness": 0.0014273180503198949,
+      "pagerank": 0.0017494336130547824
+    },
+    {
+      "node": "CMC",
+      "entity_type": "ORGANIZATION",
+      "in_degree": 13,
+      "out_degree": 15,
+      "degree": 28,
+      "betweenness": 0.0011548215139089765,
+      "pagerank": 0.0008142400870181324
+    },
+    {
+      "node": "NHNN",
+      "entity_type": "ORGANIZATION",
+      "in_degree": 12,
+      "out_degree": 16,
+      "degree": 28,
+      "betweenness": 0.0005387127729479218,
+      "pagerank": 0.00059141005824492
+    }
+  ],
+  "top_by_betweenness": [
+    {
+      "node": "Viettel",
+      "entity_type": "ORGANIZATION",
+      "in_degree": 32,
+      "out_degree": 37,
+      "degree": 69,
+      "betweenness": 0.0018634793942780379,
+      "pagerank": 0.0026050955729406363
+    },
+    {
+      "node": "FPT",
+      "entity_type": "ORGANIZATION",
+      "in_degree": 48,
+      "out_degree": 43,
+      "degree": 91,
+      "betweenness": 0.0016453159610906615,
+      "pagerank": 0.0031114750343618027
+    },
+    {
+      "node": "Apple",
+      "entity_type": "ORGANIZATION",
+      "in_degree": 19,
+      "out_degree": 54,
+      "degree": 73,
+      "betweenness": 0.0015872143640286761,
+      "pagerank": 0.001028640935419838
+    },
+    {
+      "node": "Bộ Công an",
+      "entity_type": "ORGANIZATION",
+      "in_degree": 14,
+      "out_degree": 14,
+      "degree": 28,
+      "betweenness": 0.0014273180503198949,
+      "pagerank": 0.0017494336130547824
+    },
+    {
+      "node": "Google",
+      "entity_type": "ORGANIZATION",
+      "in_degree": 18,
+      "out_degree": 22,
+      "degree": 40,
+      "betweenness": 0.0014008297549503532,
+      "pagerank": 0.001388661619127133
+    },
+    {
+      "node": "Samsung",
+      "entity_type": "ORGANIZATION",
+      "in_degree": 9,
+      "out_degree": 22,
+      "degree": 31,
+      "betweenness": 0.001305097915297524,
+      "pagerank": 0.00046259647111708524
+    },
+    {
+      "node": "Nvidia",
+      "entity_type": "ORGANIZATION",
+      "in_degree": 13,
+      "out_degree": 25,
+      "degree": 38,
+      "betweenness": 0.001266087003785371,
+      "pagerank": 0.0005833363276365551
+    },
+    {
+      "node": "CMC",
+      "entity_type": "ORGANIZATION",
+      "in_degree": 13,
+      "out_degree": 15,
+      "degree": 28,
+      "betweenness": 0.0011548215139089765,
+      "pagerank": 0.0008142400870181324
+    },
+    {
+      "node": "VPBank",
+      "entity_type": "ORGANIZATION",
+      "in_degree": 13,
+      "out_degree": 26,
+      "degree": 39,
+      "betweenness": 0.000893876119213385,
+      "pagerank": 0.0008373889655180397
+    },
+    {
+      "node": "Bộ KH&CN",
+      "entity_type": "ORGANIZATION",
+      "in_degree": 9,
+      "out_degree": 12,
+      "degree": 21,
+      "betweenness": 0.0007880111475952836,
+      "pagerank": 0.001137588863088553
+    },
+    {
+      "node": "Việt Nam",
+      "entity_type": "LOCATION",
+      "in_degree": 14,
+      "out_degree": 93,
+      "degree": 107,
+      "betweenness": 0.0007723789283465915,
+      "pagerank": 0.0006633141198670662
+    },
+    {
+      "node": "Bộ Tài chính",
+      "entity_type": "ORGANIZATION",
+      "in_degree": 11,
+      "out_degree": 13,
+      "degree": 24,
+      "betweenness": 0.0007708646217115171,
+      "pagerank": 0.0014244825431685025
+    },
+    {
+      "node": "Đại học Bách khoa Hà Nội",
+      "entity_type": "ORGANIZATION",
+      "in_degree": 6,
+      "out_degree": 5,
+      "degree": 11,
+      "betweenness": 0.0007523828846567281,
+      "pagerank": 0.0007669773203095232
+    },
+    {
+      "node": "MobiFone",
+      "entity_type": "ORGANIZATION",
+      "in_degree": 14,
+      "out_degree": 10,
+      "degree": 24,
+      "betweenness": 0.0006432598883598429,
+      "pagerank": 0.0011746196141288088
+    },
+    {
+      "node": "Zalo",
+      "entity_type": "ORGANIZATION",
+      "in_degree": 5,
+      "out_degree": 4,
+      "degree": 9,
+      "betweenness": 0.0006301841107409565,
+      "pagerank": 0.0004247750606774242
+    },
+    {
+      "node": "Mastercard",
+      "entity_type": "ORGANIZATION",
+      "in_degree": 2,
+      "out_degree": 2,
+      "degree": 4,
+      "betweenness": 0.0006238404002203068,
+      "pagerank": 0.00011003228192539634
+    },
+    {
+      "node": "Ericsson",
+      "entity_type": "ORGANIZATION",
+      "in_degree": 3,
+      "out_degree": 2,
+      "degree": 5,
+      "betweenness": 0.0005430786004599737,
+      "pagerank": 0.0002929149939615842
+    },
+    {
+      "node": "NHNN",
+      "entity_type": "ORGANIZATION",
+      "in_degree": 12,
+      "out_degree": 16,
+      "degree": 28,
+      "betweenness": 0.0005387127729479218,
+      "pagerank": 0.00059141005824492
+    },
+    {
+      "node": "Bộ",
+      "entity_type": "ORGANIZATION",
+      "in_degree": 4,
+      "out_degree": 2,
+      "degree": 6,
+      "betweenness": 0.0005340567094346986,
+      "pagerank": 0.0003419580206339063
+    },
+    {
+      "node": "Bộ Nông nghiệp và Môi trường",
+      "entity_type": "ORGANIZATION",
+      "in_degree": 5,
+      "out_degree": 6,
+      "degree": 11,
+      "betweenness": 0.0005283526213004374,
+      "pagerank": 0.0007072029810466032
+    }
+  ],
+  "top_by_pagerank": [
+    {
+      "node": "công nghiệp",
+      "entity_type": "INDUSTRY",
+      "in_degree": 53,
+      "out_degree": 4,
+      "degree": 57,
+      "betweenness": 3.9327157538151576e-05,
+      "pagerank": 0.003328305214685268
+    },
+    {
+      "node": "FPT",
+      "entity_type": "ORGANIZATION",
+      "in_degree": 48,
+      "out_degree": 43,
+      "degree": 91,
+      "betweenness": 0.0016453159610906615,
+      "pagerank": 0.0031114750343618027
+    },
+    {
+      "node": "Viettel",
+      "entity_type": "ORGANIZATION",
+      "in_degree": 32,
+      "out_degree": 37,
+      "degree": 69,
+      "betweenness": 0.0018634793942780379,
+      "pagerank": 0.0026050955729406363
+    },
+    {
+      "node": "công nghệ",
+      "entity_type": "INDUSTRY",
+      "in_degree": 32,
+      "out_degree": 1,
+      "degree": 33,
+      "betweenness": 9.41742278212442e-06,
+      "pagerank": 0.0021496979737553063
+    },
+    {
+      "node": "UBND",
+      "entity_type": "ORGANIZATION",
+      "in_degree": 27,
+      "out_degree": 15,
+      "degree": 42,
+      "betweenness": 0.0004081322685317081,
+      "pagerank": 0.0019828821158211153
+    },
+    {
+      "node": "465.819 tỷ",
+      "entity_type": "MONEY",
+      "in_degree": 1,
+      "out_degree": 0,
+      "degree": 1,
+      "betweenness": 0.0,
+      "pagerank": 0.0019102415174285536
+    },
+    {
+      "node": "Bộ Công an",
+      "entity_type": "ORGANIZATION",
+      "in_degree": 14,
+      "out_degree": 14,
+      "degree": 28,
+      "betweenness": 0.0014273180503198949,
+      "pagerank": 0.0017494336130547824
+    },
+    {
+      "node": "Cục An toàn thông tin",
+      "entity_type": "ORGANIZATION",
+      "in_degree": 9,
+      "out_degree": 9,
+      "degree": 18,
+      "betweenness": 0.00043335753802326444,
+      "pagerank": 0.0016211615823220008
+    },
+    {
+      "node": "100%",
+      "entity_type": "UNKNOWN",
+      "in_degree": 23,
+      "out_degree": 0,
+      "degree": 23,
+      "betweenness": 0.0,
+      "pagerank": 0.0015800158947487642
+    },
+    {
+      "node": "Mỹ",
+      "entity_type": "LOCATION",
+      "in_degree": 15,
+      "out_degree": 22,
+      "degree": 37,
+      "betweenness": 0.00023360909777524286,
+      "pagerank": 0.0014273120928418323
+    },
+    {
+      "node": "Bộ Tài chính",
+      "entity_type": "ORGANIZATION",
+      "in_degree": 11,
+      "out_degree": 13,
+      "degree": 24,
+      "betweenness": 0.0007708646217115171,
+      "pagerank": 0.0014244825431685025
+    },
+    {
+      "node": "Google",
+      "entity_type": "ORGANIZATION",
+      "in_degree": 18,
+      "out_degree": 22,
+      "degree": 40,
+      "betweenness": 0.0014008297549503532,
+      "pagerank": 0.001388661619127133
+    },
+    {
+      "node": "10%",
+      "entity_type": "UNKNOWN",
+      "in_degree": 20,
+      "out_degree": 0,
+      "degree": 20,
+      "betweenness": 0.0,
+      "pagerank": 0.0012937412847806868
+    },
+    {
+      "node": "20%",
+      "entity_type": "UNKNOWN",
+      "in_degree": 18,
+      "out_degree": 0,
+      "degree": 18,
+      "betweenness": 0.0,
+      "pagerank": 0.0012660472425568333
+    },
+    {
+      "node": "Bộ Công Thương",
+      "entity_type": "ORGANIZATION",
+      "in_degree": 7,
+      "out_degree": 9,
+      "degree": 16,
+      "betweenness": 0.0002878828114420955,
+      "pagerank": 0.0012255883657007465
+    },
+    {
+      "node": "CMC Telecom",
+      "entity_type": "ORGANIZATION",
+      "in_degree": 11,
+      "out_degree": 10,
+      "degree": 21,
+      "betweenness": 0.00046130554887232407,
+      "pagerank": 0.0012198932379911206
+    },
+    {
+      "node": "MobiFone",
+      "entity_type": "ORGANIZATION",
+      "in_degree": 14,
+      "out_degree": 10,
+      "degree": 24,
+      "betweenness": 0.0006432598883598429,
+      "pagerank": 0.0011746196141288088
+    },
+    {
+      "node": "NIC",
+      "entity_type": "ORGANIZATION",
+      "in_degree": 7,
+      "out_degree": 6,
+      "degree": 13,
+      "betweenness": 6.968892858772071e-07,
+      "pagerank": 0.0011541857911626856
+    },
+    {
+      "node": "Ngân hàng Nhà nước",
+      "entity_type": "ORGANIZATION",
+      "in_degree": 9,
+      "out_degree": 8,
+      "degree": 17,
+      "betweenness": 0.0001336233634068595,
+      "pagerank": 0.0011418606134781311
+    },
+    {
+      "node": "Bộ KH&CN",
+      "entity_type": "ORGANIZATION",
+      "in_degree": 9,
+      "out_degree": 12,
+      "degree": 21,
+      "betweenness": 0.0007880111475952836,
+      "pagerank": 0.001137588863088553
+    }
+  ]
+}

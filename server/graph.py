@@ -217,30 +217,70 @@ def build_graph(raw_entities: list[dict], text: str) -> GraphData:
 
 
 def predict_new_links(entities: list[Entity], relations: list[Relation]) -> list[Relation]:
-    """Dự đoán liên kết mới — KB trước, fallback rule-based."""
+    """
+    Link Prediction nâng cấp:
+    1. Knowledge Base (ưu tiên cao)
+    2. Graph-based (Common Neighbors + Jaccard)
+    3. Rule-based fallback
+    """
+
+    # ── Build adjacency list ─────────────────────────────
+    neighbors = {e.id: set() for e in entities}
+    for r in relations:
+        neighbors[r.source].add(r.target)
+        neighbors[r.target].add(r.source)
+
     existing = {(r.source, r.target) for r in relations}
     predicted: list[Relation] = []
+
+    # ── Helper functions ─────────────────────────────
+    def common_neighbors(u, v):
+        return len(neighbors[u] & neighbors[v])
+
+    def jaccard(u, v):
+        inter = neighbors[u] & neighbors[v]
+        union = neighbors[u] | neighbors[v]
+        return len(inter) / len(union) if union else 0
+
+    # ── Predict ─────────────────────────────
+    candidates = []
 
     for i, src in enumerate(entities):
         for j, tgt in enumerate(entities):
             if i >= j or (src.id, tgt.id) in existing:
                 continue
 
-            # Thử KB trước
-            label = None
+            # 1. KB score
+            kb_label = None
             if kb.kb_ready:
-                label = kb.find_relation(src.name, tgt.name)
+                kb_label = kb.find_relation(src.name, tgt.name)
 
-            # Fallback rule-based
-            if not label:
-                label = _RELATION_LABELS.get((src.type, tgt.type))
+            # 2. Graph score
+            cn_score = common_neighbors(src.id, tgt.id)
+            jc_score = jaccard(src.id, tgt.id)
 
-            if label and label != "LIÊN QUAN ĐẾN":
-                predicted.append(Relation(
-                    source=src.id, target=tgt.id,
-                    label=label, isPredicted=True,
-                ))
-            if len(predicted) >= 5:
-                return predicted
+            # Tổng hợp score
+            score = cn_score + jc_score
+
+            # 3. Rule fallback
+            rule_label = _RELATION_LABELS.get((src.type, tgt.type))
+
+            label = kb_label or rule_label
+
+            # Điều kiện chọn
+            if label and (kb_label or score >= 0.5):
+                candidates.append((score, Relation(
+                    source=src.id,
+                    target=tgt.id,
+                    label=label,
+                    isPredicted=True,
+                )))
+
+    # ── Sort theo score ─────────────────────────────
+    candidates.sort(key=lambda x: x[0], reverse=True)
+
+    # ── Lấy top 5 ─────────────────────────────
+    for _, rel in candidates[:5]:
+        predicted.append(rel)
 
     return predicted

@@ -117,3 +117,4 @@ phobert-ner-output/checkpoint-36730/vocab.txt
 TXT/ner_conll3.txt
 TXT/ner_conll4.txt
 knowledge_graph_output
+feature_engineering_output

@@ -1,0 +1,125 @@
+{
+  "timestamp_utc": "2026-03-26T05:54:45.856683+00:00",
+  "data_dir": "D:\\KLTN3\\extraction-system\\feature_engineering_output",
+  "feature_names": [
+    "log_pagerank",
+    "pr_per_degree",
+    "in_out_ratio",
+    "object_mean_confidence",
+    "in_degree",
+    "object_total_frequency",
+    "ego_max_degree",
+    "object_relation_types",
+    "ego_mean_degree",
+    "object_mean_frequency",
+    "log_in_degree",
+    "log_out_degree",
+    "subject_relation_types",
+    "subject_mean_confidence",
+    "is_high_pagerank",
+    "subject_mean_frequency",
+    "out_degree",
+    "triple_total_appearances",
+    "triple_overall_conf_mean",
+    "type_PERSON",
+    "triple_rel_type_coverage",
+    "entity_type_freq",
+    "has_rel_HỢP_TÁC",
+    "type_MONEY",
+    "ego_type_diversity",
+    "type_UNKNOWN",
+    "log_betweenness",
+    "type_INDUSTRY",
+    "type_ORGANIZATION",
+    "has_rel_LÃNH_ĐẠO",
+    "bw_per_degree",
+    "type_PRODUCT",
+    "type_EVENT",
+    "ego_density",
+    "has_rel_SẢN_XUẤT",
+    "type_PERCENT",
+    "has_rel_ĐẦU_TƯ",
+    "type_LOCATION",
+    "is_bridge",
+    "ego_triangles"
+  ],
+  "label_encoder": {
+    "label_names": [
+      "LOW",
+      "MEDIUM",
+      "HIGH"
+    ],
+    "label_to_int": {
+      "LOW": 0,
+      "MEDIUM": 1,
+      "HIGH": 2
+    },
+    "int_to_label": {
+      "0": "LOW",
+      "1": "MEDIUM",
+      "2": "HIGH"
+    },
+    "label_source": "pagerank",
+    "label_bins": [
+      0.0,
+      0.25,
+      0.6,
+      1.0
+    ]
+  },
+  "selected_model": "histgb",
+  "val_metrics": {
+    "macro_f1": 0.8924805433762759,
+    "weighted_f1": 0.8924900052280216,
+    "accuracy": 0.8948811700182815,
+    "mae_class_distance": 0.10511882998171847
+  },
+  "val_confusion_matrix": [
+    [
+      348,
+      16,
+      0
+    ],
+    [
+      77,
+      271,
+      17
+    ],
+    [
+      0,
+      5,
+      360
+    ]
+  ],
+  "test_metrics": {
+    "macro_f1": 0.8859371089629295,
+    "weighted_f1": 0.8860044119031993,
+    "accuracy": 0.8884826325411335,
+    "mae_class_distance": 0.11151736745886655
+  },
+  "test_confusion_matrix": [
+    [
+      345,
+      20,
+      0
+    ],
+    [
+      87,
+      264,
+      13
+    ],
+    [
+      0,
+      2,
+      363
+    ]
+  ],
+  "splits": {
+    "X_train": "X_train.csv",
+    "y_train": "y_train.csv",
+    "X_val": "X_val.csv",
+    "y_val": "y_val.csv",
+    "X_test": "X_test.csv",
+    "y_test": "y_test.csv"
+  }
+}

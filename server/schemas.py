@@ -1,9 +1,39 @@
-from pydantic import BaseModel
+"""
+Pydantic schemas — request/response models cho FastAPI.
+
+Cải tiến #4: Thêm validation cho ExtractRequest
+  - max_length trên trường text để tránh crash server với input 100MB.
+  - Field(...) với constraints thay vì BaseModel trống.
+"""
+
+from pydantic import BaseModel, Field, field_validator
+
+
+# ── Giới hạn độ dài text đầu vào ──────────────────────────────────────────────
+# PhoBERT xử lý ~400 từ/giây; 50_000 ký tự ≈ 8_000 từ ≈ ~20 giây → hợp lý.
+# Thay đổi hằng số này nếu server có tài nguyên cao hơn.
+MAX_TEXT_LENGTH   = 50_000  # ký tự
+MAX_PDF_TEXT_LENGTH = 200_000  # PDF nhiều trang cho phép dài hơn
 
 
 class ExtractRequest(BaseModel):
-    text: str
+    text: str = Field(
+        ...,
+        min_length=1,
+        max_length=MAX_TEXT_LENGTH,
+        description=(
+            f"Văn bản cần trích xuất entity. "
+            f"Tối đa {MAX_TEXT_LENGTH:,} ký tự."
+        ),
+    )
     use_deep_analysis: bool = False
+
+    @field_validator("text")
+    @classmethod
+    def text_must_not_be_blank(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError("text không được chỉ chứa khoảng trắng.")
+        return v
 
 
 class EntityProperty(BaseModel):
@@ -31,8 +61,8 @@ class GraphData(BaseModel):
 
 
 class PredictLinksRequest(BaseModel):
-    entities: list[Entity]
-    relations: list[Relation]
+    entities: list[Entity] = Field(..., max_length=500)
+    relations: list[Relation] = Field(..., max_length=5000)
     use_deep_analysis: bool = False
 
 
@@ -41,8 +71,8 @@ class PredictLinksResponse(BaseModel):
 
 
 class MetricsRequest(BaseModel):
-    entities: list[Entity]
-    relations: list[Relation]
+    entities: list[Entity] = Field(..., max_length=500)
+    relations: list[Relation] = Field(..., max_length=5000)
 
 
 class NodeMetrics(BaseModel):

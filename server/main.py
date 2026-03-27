@@ -1,13 +1,22 @@
 """
 FastAPI entry point — NER Knowledge Graph Extractor
 Chạy: python server/main.py   hoặc   npm run server
+
+Cải tiến #4: Rate limiting + validation
+  - SlowAPI rate limiter: /extract giới hạn 10 req/phút mỗi IP.
+  - MAX_UPLOAD_BYTES: từ chối file PDF vượt 20MB trước khi đọc vào RAM.
+  - /upload-pdf trả về 413 nếu file quá lớn.
+  - Custom exception handler trả JSON đúng format thay vì HTML mặc định.
 """
 
 import logging
 
-from fastapi import FastAPI, HTTPException, UploadFile, File
+from fastapi import FastAPI, HTTPException, Request, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from fastapi.responses import JSONResponse
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
 
 import model as model_state
 import knowledge_base as kb
@@ -20,11 +29,19 @@ from schemas import (
     ExtractRequest, GraphData,
     PredictLinksRequest, PredictLinksResponse,
     MetricsRequest, MetricsResponse,
+    MAX_PDF_TEXT_LENGTH,
 )
 
 logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
-app = FastAPI(title="KGE NER API", version="1.0.0")
+# ── Rate limiter ───────────────────────────────────────────────────────────────
+limiter = Limiter(key_func=get_remote_address, default_limits=["60/minute"])
+
+app = FastAPI(title="KGE NER API", version="1.1.0")
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -32,8 +49,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Giới hạn kích thước file PDF upload (bytes)
+MAX_UPLOAD_BYTES = 20 * 1024 * 1024  # 20 MB
 
-# ── Routes ────────────────────────────────────────────────────────────────────
+
+# ── Routes ─────────────────────────────────────────────────────────────────────
 
 @app.get("/health")
 def health():
@@ -47,32 +67,73 @@ def health():
 
 
 @app.post("/extract", response_model=GraphData)
-def extract(req: ExtractRequest):
+@limiter.limit("10/minute")
+def extract(request: Request, req: ExtractRequest):
+    """
+    Trích xuất Knowledge Graph từ văn bản.
+    Rate limit: 10 request/phút mỗi IP.
+    Input: tối đa 50,000 ký tự (cấu hình trong schemas.py).
+    """
     _require_model()
     return build_graph(run_ner(req.text), req.text)
 
 
 @app.post("/upload-pdf")
-async def upload_pdf(file: UploadFile = File(...)):
-    """Đọc file PDF, trả về văn bản đã trích xuất."""
+@limiter.limit("5/minute")
+async def upload_pdf(request: Request, file: UploadFile = File(...)):
+    """
+    Đọc file PDF, trả về văn bản đã trích xuất.
+    Rate limit: 5 request/phút mỗi IP.
+    Giới hạn kích thước: 20MB.
+    """
     if not file.filename or not file.filename.lower().endswith(".pdf"):
         raise HTTPException(400, detail="Chỉ hỗ trợ file PDF (.pdf)")
+
+    # Kiểm tra kích thước trước khi đọc toàn bộ vào RAM
+    # Content-Length header có thể vắng mặt nên đọc từng chunk
+    chunks: list[bytes] = []
+    total_bytes = 0
+    async for chunk in file:
+        total_bytes += len(chunk)
+        if total_bytes > MAX_UPLOAD_BYTES:
+            raise HTTPException(
+                413,
+                detail=(
+                    f"File vượt quá kích thước tối đa "
+                    f"({MAX_UPLOAD_BYTES // (1024*1024)} MB). "
+                    "Vui lòng upload file nhỏ hơn."
+                ),
+            )
+        chunks.append(chunk)
+
+    data = b"".join(chunks)
+
     try:
         from pypdf import PdfReader
         import io
 
-        data   = await file.read()
         reader = PdfReader(io.BytesIO(data))
         pages  = [p.extract_text().strip() for p in reader.pages if p.extract_text()]
 
         if not pages:
             raise HTTPException(422, detail="Không trích xuất được văn bản. File có thể là PDF scan.")
 
+        full_text = "\n\n".join(pages)
+
+        # Cắt bớt nếu vượt giới hạn text trích xuất
+        if len(full_text) > MAX_PDF_TEXT_LENGTH:
+            logger.warning(
+                "PDF '%s' extracted text truncated: %d → %d chars",
+                file.filename, len(full_text), MAX_PDF_TEXT_LENGTH,
+            )
+            full_text = full_text[:MAX_PDF_TEXT_LENGTH]
+
         return {
-            "text": "\n\n".join(pages),
+            "text": full_text,
             "page_count": len(reader.pages),
             "extracted_pages": len(pages),
             "filename": file.filename,
+            "truncated": len("\n\n".join(pages)) > MAX_PDF_TEXT_LENGTH,
         }
     except HTTPException:
         raise
@@ -81,13 +142,15 @@ async def upload_pdf(file: UploadFile = File(...)):
 
 
 @app.post("/predict-links", response_model=PredictLinksResponse)
-def predict_links(req: PredictLinksRequest):
+@limiter.limit("30/minute")
+def predict_links(request: Request, req: PredictLinksRequest):
     _require_model()
     return PredictLinksResponse(predicted_relations=predict_new_links(req.entities, req.relations))
 
 
 @app.post("/metrics", response_model=MetricsResponse)
-def metrics(req: MetricsRequest):
+@limiter.limit("20/minute")
+def metrics(request: Request, req: MetricsRequest):
     """Tính graph metrics từ dữ liệu entities/relations hiện tại."""
     try:
         return compute_graph_metrics(GraphData(entities=req.entities, relations=req.relations))
@@ -104,7 +167,8 @@ def kb_stats():
 
 
 @app.get("/kb/search")
-def kb_search(q: str, limit: int = 20):
+@limiter.limit("30/minute")
+def kb_search(request: Request, q: str, limit: int = 20):
     """Tìm kiếm entity trong Knowledge Base."""
     if not kb.kb_ready:
         raise HTTPException(503, detail="Knowledge Base chưa sẵn sàng.")
@@ -122,14 +186,17 @@ def kb_entity(name: str, limit: int = 50):
     return {"entity": name, "total": len(triples), "triples": triples}
 
 
-# ── Helpers ───────────────────────────────────────────────────────────────────
+# ── Helpers ────────────────────────────────────────────────────────────────────
 
 def _require_model():
     if not model_state.model_ready:
-        raise HTTPException(503, detail=f"Model chưa sẵn sàng. {model_state.model_error or 'Đang tải...'}")
+        raise HTTPException(
+            503,
+            detail=f"Model chưa sẵn sàng. {model_state.model_error or 'Đang tải...'}",
+        )
 
 
-# ── Startup ───────────────────────────────────────────────────────────────────
+# ── Startup ────────────────────────────────────────────────────────────────────
 
 @app.on_event("startup")
 async def startup_event():

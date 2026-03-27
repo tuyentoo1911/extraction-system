@@ -13,7 +13,7 @@ Pipeline trích xuất quan hệ — 3 tầng ưu tiên giảm dần:
 
   Tầng 3 — Co-occurrence scored (fallback)
       Proximity + type_priority + KB_boost score.
-      Giữ lại "LIÊN QUAN ĐẾN" thay vì bỏ qua.
+      Bỏ qua quan hệ nếu không xác định được nhãn cụ thể (không dùng "LIÊN QUAN ĐẾN").
 
 Regex patterns được test trực tiếp trên câu mẫu từ ảnh:
   "Nguyễn Minh Anh từng làm việc tại FPT Software từ năm 2010..."
@@ -489,24 +489,23 @@ class _SP:
     lbl:   str    = field(compare=False)
 
 
-def _fallback_label(src: Entity, tgt: Entity) -> str:
+def _fallback_label(src: Entity, tgt: Entity) -> Optional[str]:
     if kb.kb_ready:
         lbl = kb.find_relation(src.name, tgt.name)
         if lbl:
             return lbl
-    return _RELATION_LABELS_VI.get((src.type, tgt.type), "LIÊN QUAN ĐẾN")
+    return _RELATION_LABELS_VI.get((src.type, tgt.type))
 
 
-def _score(src: Entity, tgt: Entity, lbl: str, sp: int, tp: int) -> float:
+def _score(src: Entity, tgt: Entity, sp: int, tp: int) -> float:
     type_s = _TYPE_PAIR_PRIORITY.get(
         (src.type, tgt.type),
         _TYPE_PAIR_PRIORITY.get((tgt.type, src.type), 0),
     )
     prox = (5.0 * math.exp(-abs(sp - tp) / (_PROXIMITY_WINDOW * 6))
             if sp >= 0 and tp >= 0 else 0.0)
-    kb_b = 3.0  if (kb.kb_ready and lbl != "LIÊN QUAN ĐẾN") else 0.0
-    gen  = -2.0 if lbl == "LIÊN QUAN ĐẾN" else 0.0
-    return type_s + prox + kb_b + gen
+    kb_b = 3.0 if kb.kb_ready else 0.0
+    return type_s + prox + kb_b
 
 
 def _extract_cooccurrence_relations(
@@ -532,7 +531,8 @@ def _extract_cooccurrence_relations(
                 if pk in seen_pk:
                     continue
                 lbl = _fallback_label(se, te)
-                scored.append(_SP(_score(se, te, lbl, sp, tp), se, te, lbl))
+                if lbl:
+                    scored.append(_SP(_score(se, te, sp, tp), se, te, lbl))
 
         scored.sort(key=lambda p: p.score, reverse=True)
         for sp in scored[:_MAX_PAIRS_PER_SENTENCE]:
@@ -643,7 +643,7 @@ def predict_new_links(
             lbl = kb.find_relation(src.name, tgt.name)
         if not lbl:
             lbl = _RELATION_LABELS_VI.get((src.type, tgt.type))
-        if lbl and lbl != "LIÊN QUAN ĐẾN":
+        if lbl:
             predicted.append(Relation(
                 source=src.id, target=tgt.id,
                 label=lbl, isPredicted=True,

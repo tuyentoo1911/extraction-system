@@ -16,3 +16,4 @@ model/knowledge_graph_output/*.png
 model/knowledge_graph_output/*.gexf
 model/knowledge_graph_output/*.graphml.xml
 model/knowledge_graph_output/*.html
+notebooks

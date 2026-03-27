@@ -16,6 +16,7 @@ import logging
 from typing import Optional
 
 import model as model_state
+import knowledge_base as kb
 
 logger = logging.getLogger(__name__)
 
@@ -127,7 +128,103 @@ def run_ner(text: str) -> list[dict]:
                         seen_spans.add(span_key)
                         all_entities.append({**ent, "words": global_words})
 
-    return all_entities
+    # Thêm bước hậu xử lý ranh giới & chuẩn hóa loại thực thể do PhoBERT hay sai
+    all_entities = post_process_entities(text, all_entities)
+    return gazetteer_scan(text, all_entities)
+
+
+def post_process_entities(text: str, entities: list[dict]) -> list[dict]:
+    """
+    Sửa các lỗi thường gặp của PhoBERT NER:
+    - Ranh giới sai (thừa tiền tố, thiếu hậu tố chữ/số)
+    - Gán nhãn sai loại (VD: Hồ Chí Minh -> LOCATION)
+    """
+    processed = []
+    
+    for e in entities:
+        e_text = e["text"].strip(".,;:()[]{}'\" \t\n")
+        e_type = e["ner_type"]
+        
+        # 1. Bỏ tiền tố rác của EVENT
+        if e_type == "EVENT":
+            e_text = re.sub(r"^(tại|vào|trong|ở)?\s*(sự kiện|chương trình|lễ hội|buổi|cuộc)?\s*", "", e_text, flags=re.IGNORECASE).strip()
+            
+        # 2. Phục hồi phần đuôi thiếu
+        start_idx = text.find(e_text)
+        if start_idx != -1:
+            end_idx = start_idx + len(e_text)
+            after_text = text[end_idx:]
+            
+            # Đại học Bách Khoa Hà -> thêm "Nội"
+            if e_text.endswith("Khoa Hà") and after_text.startswith(" Nội"):
+                e_text += " Nội"
+            # Thêm USD/VNĐ/đồng... nếu dính ngay sau
+            elif e_type == "MONEY":
+                m = re.match(r"^\s*(USD|VNĐ|VND|đồng|đô|euro|đ)\b", after_text, flags=re.IGNORECASE)
+                if m:
+                    e_text += m.group(0)
+            # Thêm năm cụ thể "202x" vào đuôi
+            elif e_type == "DATE" and e_text.lower().endswith("năm"):
+                m = re.match(r"^\s*\d{4}\b", after_text)
+                if m:
+                    e_text += m.group(0)
+                    
+        # 3. Type Correction (Sửa nhầm type người/địa điểm nổi iếng)
+        if e_text in ["Hồ Chí Minh", "TP. Hồ Chí Minh", "Thành phố Hồ Chí Minh", "Hà Nội"]:
+            e_type = "LOCATION"
+            
+        if not e_text:
+            continue
+            
+        processed.append({
+            "text": e_text.strip(),
+            "ner_type": e_type,
+            "words": e.get("words", [])
+        })
+        
+    return processed
+
+
+def gazetteer_scan(text: str, ner_results: list[dict]) -> list[dict]:
+    """
+    Quét lại văn bản để tìm các entity KB bằng regex word-boundary.
+    Track vị trí (overlap) chuẩn xác để không sinh ra rác (substring) hay phá vỡ model entities.
+    """
+    if not hasattr(kb, 'kb_ready') or not kb.kb_ready:
+        return ner_results
+        
+    # Tập hợp vị trí các entity đã được extract
+    occupied = []
+    for e in ner_results:
+        start_idx = text.find(e["text"])
+        if start_idx != -1:
+            occupied.append((start_idx, start_idx + len(e["text"])))
+            
+    # Sắp xếp longest-first độ ưu tiên
+    candidates = sorted(list(set(kb._all_subjects) | set(kb._all_objects)), key=len, reverse=True)
+    
+    for ent in candidates:
+        if len(ent) <= 3:
+            continue
+            
+        esc_ent = re.escape(ent)
+        # Dùng lookaround cho word boundary để cover Unicode VN tốt nhất (\w)
+        pattern = re.compile(rf"(?<!\w){esc_ent}(?!\w)", re.IGNORECASE | re.UNICODE)
+        
+        for match in pattern.finditer(text):
+            m_start, m_end = match.start(), match.end()
+            
+            is_overlap = any(max(m_start, o[0]) < min(m_end, o[1]) for o in occupied)
+            if not is_overlap:
+                ner_type = kb.get_entity_type(ent) or "ORGANIZATION"
+                ner_results.append({
+                    "text": match.group(0),
+                    "ner_type": ner_type,
+                    "words": []
+                })
+                occupied.append((m_start, m_end))
+                
+    return ner_results
 
 
 def _predict_sentence(words: list[str], torch) -> list[dict]:

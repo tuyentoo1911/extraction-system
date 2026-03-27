@@ -46,6 +46,7 @@ class Entity(BaseModel):
     name: str
     type: str
     properties: list[EntityProperty] = []
+    aliases: list[str] = []
 
 
 class Relation(BaseModel):

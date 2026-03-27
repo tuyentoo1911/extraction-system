@@ -328,15 +328,15 @@ def _best_entity_match(
         cands = list(entities)
 
     for e in cands:                          # exact
-        if e.name.lower() == ml:
+        if e.name.lower() == ml or any(a.lower() == ml for a in getattr(e, 'aliases', [])):
             return e
     for e in cands:                          # substring
         el = e.name.lower()
-        if el in ml or ml in el:
+        if el in ml or ml in el or any(a.lower() in ml or ml in a.lower() for a in getattr(e, 'aliases', [])):
             return e
     best_e, best_s = None, 0.0              # Jaccard
     for e in cands:
-        s = _jaccard(e.name, matched_text)
+        s = max([_jaccard(n, matched_text) for n in [e.name] + getattr(e, 'aliases', [])])
         if s > best_s:
             best_s, best_e = s, e
     return best_e if best_s >= threshold else None
@@ -355,9 +355,15 @@ def _get_search_pat(name: str) -> re.Pattern:
     return _search_cache[name]
 
 
-def _find_pos(name: str, sent: str) -> int:
-    m = _get_search_pat(name).search(sent)
-    return m.start() if m else -1
+def _find_pos(e: Entity, sent: str) -> int:
+    best_pos = -1
+    for n in [e.name] + getattr(e, 'aliases', []):
+        m = _get_search_pat(n).search(sent)
+        if m:
+            p = m.start()
+            if best_pos == -1 or p < best_pos:
+                best_pos = p
+    return best_pos
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -391,8 +397,26 @@ def _is_informative(name: str, gtype: str) -> bool:
     norm = _norm(name)
     if len(norm) < 2 or re.fullmatch(r"[\W_]+", norm):
         return False
+        
+    # Loại rác viết thường (Proper nouns không được viết thường hoàn toàn)
+    if gtype in ["Person", "Organization"] and norm.islower():
+        return False
+        
     low = norm.lower().replace(",", " ").replace(".", " ")
     toks = [t for t in low.split() if t]
+    
+    # Lọc rác một chữ chung chung cho Organization
+    if gtype == "Organization":
+        bad_org_words = {"công ty", "tập đoàn", "tổng công ty", "group", "holdings", "inc", "corp", "hiệp hội", "ngân hàng", "ban", "ngành", "phòng", "văn phòng", "chi nhánh", "trung tâm"}
+        if low in bad_org_words:
+            return False
+        # Các cụm kiểu "Group phòng", "Group chính"
+        if len(toks) <= 3 and all(t in {"group", "phòng", "ban", "chính", "nghiệp", "công"} for t in toks):
+            return False
+            
+    # Lọc rác lỗi lặp từ PhoBERT
+    if "chính chính" in low or "nghiên nghiên" in low:
+        return False
     if gtype == "Date":
         if not any(c.isdigit() for c in norm):
             if len(toks) <= 1 or all(t in _GENERIC_DATE_WORDS for t in toks):
@@ -518,9 +542,9 @@ def _extract_cooccurrence_relations(
     seen_tk:   set[tuple[str, str, str]] = set()
 
     for sent in sentences:
-        ents = [(e, _find_pos(e.name, sent))
+        ents = [(e, _find_pos(e, sent))
                 for e in entities
-                if not _is_noisy_date(e) and _find_pos(e.name, sent) >= 0]
+                if not _is_noisy_date(e) and _find_pos(e, sent) >= 0]
         if len(ents) < 2:
             continue
 
@@ -548,7 +572,133 @@ def _extract_cooccurrence_relations(
 
 
 # ═══════════════════════════════════════════════════════════════════
-# §9 — build_graph (entry point)
+# §9 — Graph Structuring (Alias & Coreference)
+# ═══════════════════════════════════════════════════════════════════
+
+def _resolve_aliases(entities: list[Entity], text: str) -> list[Entity]:
+    alias_map = {}
+    
+    # 1. Ngoặc đơn: "Công ty Cổ phần Công nghệ Sao Việt (SaoVietTech)" hoặc "Tập đoàn ABC (ABC-Corp)"
+    for m in re.finditer(r"([A-Z\u00C0-\u1EF9][a-zA-Z0-9\s,\u00C0-\u1EF9]+)\s*\(\s*([^)]+)\s*\)", text):
+        full = _norm(m.group(1))
+        al = _norm(m.group(2))
+        if 2 <= len(al) < len(full):
+            alias_map[al.lower()] = full.lower()
+
+    # 2. Xử lý Organization
+    orgs = [e for e in entities if e.type == "Organization"]
+    org_texts = sorted([e.name for e in orgs], key=len, reverse=True)
+    stopwords_org = {"công", "ty", "tập", "đoàn", "group", "holdings", "inc", "corp", "jsc", "ltd", "cổ", "phần", "tnhh"}
+    for i, primary in enumerate(org_texts):
+        p_low = primary.lower()
+        p_words = set(p_low.split()) - stopwords_org
+        for alias in org_texts[i+1:]:
+            a_low = alias.lower()
+            if a_low in alias_map: continue
+            if a_low in p_low and len(a_low) >= 4 and a_low not in stopwords_org:
+                 alias_map[a_low] = p_low
+            else:
+                 a_words = set(a_low.split()) - stopwords_org
+                 if len(a_words) > 0 and a_words.issubset(p_words):
+                     alias_map[a_low] = p_low
+
+    # 3. Xử lý Person
+    pers = [e for e in entities if e.type == "Person"]
+    per_texts = sorted([e.name for e in pers], key=len, reverse=True)
+    for i, primary in enumerate(per_texts):
+        p_low = primary.lower()
+        if len(p_low.split()) >= 2:
+            for alias in per_texts[i+1:]:
+                a_low = alias.lower()
+                if a_low in p_low:
+                     alias_map[a_low] = p_low
+
+    # Thống nhất node
+    merged = {}
+    def get_root(name_lower):
+        curr = name_lower
+        while curr in alias_map and alias_map[curr] != curr:
+            curr = alias_map[curr]
+        return curr
+
+    for e in entities:
+        root_low = get_root(e.name.lower())
+        if root_low not in merged:
+            merged[root_low] = e
+        else:
+            if e.name not in merged[root_low].aliases and e.name.lower() != merged[root_low].name.lower():
+                merged[root_low].aliases.append(e.name)
+                # Ghép tên Alias vào tên hiển thị nếu nó đáp ứng điều kiện (ngắn gọn, chưa có)
+                p_name = merged[root_low].name
+                if "(" not in p_name and e.name not in p_name and len(e.name) <= len(p_name) - 5 and len(e.name.split()) <= 3:
+                     merged[root_low].name = f"{p_name} ({e.name})"
+            for p in e.properties:
+                if not any(mp.key == p.key and mp.value == p.value for mp in merged[root_low].properties):
+                    merged[root_low].properties.append(p)
+
+    return list(merged.values())
+
+
+def _fold_properties(entities: list[Entity], relations: list[Relation]) -> tuple[list[Entity], list[Relation]]:
+    kept_types = {"Organization", "Person", "Product", "Event"}
+    final_entities = {e.id: e for e in entities}
+    final_relations = []
+    
+    for r in relations:
+        src = final_entities.get(r.source)
+        tgt = final_entities.get(r.target)
+        if not src or not tgt:
+            continue
+            
+        if tgt.type not in kept_types:
+            prop_key = r.label.title()
+            if r.label == "THÀNH LẬP": prop_key = "Founded"
+            elif r.label == "ĐẶT TẠI": prop_key = "Headquarters"
+            elif r.label == "CÓ GIÁ TRỊ" or r.label == "GIÁ" or r.label == "NGÂN SÁCH": prop_key = "Value"
+            elif r.label == "THU NHẬP": prop_key = "Income"
+            elif r.label == "TĂNG TRƯỞNG": prop_key = "Growth"
+            elif r.label == "DIỄN RA VÀO" or r.label == "RA MẮT": prop_key = "Date"
+            elif r.label == "XẢY RA TẠI" or r.label == "RA MẮT TẠI" or r.label == "Ở TẠI": prop_key = "Location"
+            elif r.label == "THUỘC NGÀNH" or r.label == "HOẠT ĐỘNG TRONG": prop_key = "Industry"
+            
+            src.properties.append(EntityProperty(key=prop_key, value=tgt.name))
+        
+        elif src.type not in kept_types:
+            tgt.properties.append(EntityProperty(key=f"Has {src.type}", value=src.name))
+            
+        else:
+            final_relations.append(r)
+            if r.label == "LÃNH ĐẠO" or r.label == "CÓ THÀNH VIÊN" or r.label == "LIÊN QUAN":
+                if src.type == "Person" and tgt.type == "Organization":
+                    src.properties.append(EntityProperty(key="Role", value=f"Lãnh đạo tại {tgt.name}"))
+                elif src.type == "Organization" and tgt.type == "Person":
+                    tgt.properties.append(EntityProperty(key="Role", value=f"Thành viên của {src.name}"))
+            elif r.label == "LÀM VIỆC TẠI":
+                src.properties.append(EntityProperty(key="Employment", value=tgt.name))
+            elif r.label == "SÁNG LẬP":
+                src.properties.append(EntityProperty(key="Role", value=f"Founder of {tgt.name}"))
+            elif r.label == "HỢP TÁC":
+                src.properties.append(EntityProperty(key="Partner", value=tgt.name))
+                tgt.properties.append(EntityProperty(key="Partner", value=src.name))
+                
+    filtered_entities = [e for e in final_entities.values() if e.type in kept_types]
+    
+    for e in filtered_entities:
+        seen_props = set()
+        new_props = []
+        for p in e.properties:
+            if p.key == "NER Type": continue
+            k = (p.key, p.value)
+            if k not in seen_props:
+                seen_props.add(k)
+                new_props.append(p)
+        e.properties = new_props
+        
+    return filtered_entities, final_relations
+
+
+# ═══════════════════════════════════════════════════════════════════
+# §10 — build_graph (entry point)
 # ═══════════════════════════════════════════════════════════════════
 
 def build_graph(raw_entities: list[dict], text: str) -> GraphData:
@@ -584,10 +734,14 @@ def build_graph(raw_entities: list[dict], text: str) -> GraphData:
         entities.append(Entity(
             id=eid, name=name, type=gtype,
             properties=[EntityProperty(key="NER Type", value=raw["ner_type"])],
+            aliases=[],
         ))
 
     if not entities:
         return GraphData(entities=[], relations=[])
+
+    # ── Gộp Aliases Thực thể ───────────────────────────────────
+    entities = _resolve_aliases(entities, text)
 
     # ── Tầng 1 ─────────────────────────────────────────────────
     pat_rels, existing_pk = _extract_pattern_relations(entities, sentences)
@@ -606,11 +760,15 @@ def build_graph(raw_entities: list[dict], text: str) -> GraphData:
     logger.debug("Tầng 3 (co-occ): %d", len(cooc_rels))
 
     all_rels = pat_rels + kb_rels + cooc_rels
+    
+    # ── Fold thuộc tính vào Nodes ──────────────────────────────
+    final_entities, final_relations = _fold_properties(entities, all_rels)
+    
     logger.info(
         "build_graph: %d entities, %d relations (P=%d KB=%d C=%d)",
-        len(entities), len(all_rels), len(pat_rels), len(kb_rels), len(cooc_rels),
+        len(final_entities), len(final_relations), len(pat_rels), len(kb_rels), len(cooc_rels),
     )
-    return GraphData(entities=entities, relations=all_rels)
+    return GraphData(entities=final_entities, relations=final_relations)
 
 
 # ═══════════════════════════════════════════════════════════════════

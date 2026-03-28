@@ -53,29 +53,29 @@ _LOCATION_PREFIXES = {
 }
 
 _RELATION_LABELS_VI: dict[tuple[str, str], str] = {
-    ("Person", "Organization"):       "LÃNH ĐẠO",
-    ("Organization", "Person"):       "CÓ THÀNH VIÊN",
-    ("Person", "Location"):           "Ở TẠI",
-    ("Organization", "Location"):     "ĐẶT TẠI",
-    ("Person", "Event"):              "THAM GIA",
-    ("Organization", "Event"):        "TỔ CHỨC SỰ KIỆN",
-    ("Person", "Product"):            "SỬ DỤNG",
-    ("Organization", "Product"):      "SẢN XUẤT",
-    ("Product", "Event"):             "RA MẮT TẠI",
-    ("Location", "Event"):            "XẢY RA TẠI",
-    ("Organization", "Organization"): "HỢP TÁC",
-    ("Person", "Person"):             "LIÊN QUAN",
-    ("Organization", "Date"):         "THÀNH LẬP",
-    ("Event", "Date"):                "DIỄN RA VÀO",
-    ("Product", "Date"):              "RA MẮT",
-    ("Organization", "Money"):        "CÓ GIÁ TRỊ",
-    ("Person", "Money"):              "THU NHẬP",
-    ("Product", "Money"):             "GIÁ",
-    ("Event", "Money"):               "NGÂN SÁCH",
-    ("Organization", "Percent"):      "TĂNG TRƯỞNG",
-    ("Product", "Percent"):           "PHẦN TRĂM",
-    ("Organization", "Industry"):     "THUỘC NGÀNH",
-    ("Person", "Industry"):           "HOẠT ĐỘNG TRONG",
+    ("Person", "Organization"):       "executive_of",
+    ("Organization", "Person"):       "has_member",
+    ("Person", "Location"):           "lives_in",
+    ("Organization", "Location"):     "headquartered_in",
+    ("Person", "Event"):              "participated_in",
+    ("Organization", "Event"):        "held_event",
+    ("Person", "Product"):            "uses_product",
+    ("Organization", "Product"):      "developed",
+    ("Product", "Event"):             "launched_at",
+    ("Location", "Event"):            "held_in",
+    # ("Organization", "Organization"): "strategic_partner", 
+    # ("Person", "Person"):             "related_to", # Muted
+    ("Organization", "Date"):         "founded_in",
+    ("Event", "Date"):                "held_on",
+    ("Product", "Date"):              "launched_on",
+    ("Organization", "Money"):        "valued_at",
+    ("Person", "Money"):              "income",
+    ("Product", "Money"):             "priced_at",
+    ("Event", "Money"):               "budget",
+    ("Organization", "Percent"):      "growth_rate",
+    ("Product", "Percent"):           "market_share",
+    ("Organization", "Industry"):     "operates_in",
+    ("Person", "Industry"):           "works_in",
 }
 
 _TYPE_PAIR_PRIORITY: dict[tuple[str, str], int] = {
@@ -121,6 +121,7 @@ class RelationPattern:
     obj_types    : Optional[set[str]]
     confidence   : float
     bidirectional: bool = False
+    reverse_edge : bool = False
 
 
 # Shared building blocks
@@ -142,163 +143,98 @@ _STOP = (
 RELATION_PATTERNS: list[RelationPattern] = [
 
     # ── Nhân sự ──────────────────────────────────────────────────
-    # "Nguyễn Minh Anh - CEO của SaoVietTech"
-    RelationPattern("LÃNH ĐẠO",
-        re.compile(
-            r"(?P<person>" + _NAME + r")"
-            r"\s*[,–\-]?\s*"
-            r"(?:Ch\u1ee7\s+t\u1ecbch|T\u1ed5ng\s+gi\u00e1m\s+\u0111\u1ed1c"
-            r"|Gi\u00e1m\s+\u0111\u1ed1c|CEO|CFO|CTO|COO"
-            r"|Ph\u00f3\s+ch\u1ee7\s+t\u1ecbch|Tr\u01b0\u1edfng\s+ban"
-            r"|Gi\u00e1m\s+\u0111\u1ed1c\s+\u0111i\u1ec1u\s+h\u00e0nh)"
-            r"\s+(?:c\u1ee7a\s+|t\u1ea1i\s+)?"
-            r"(?P<org>" + _NAME + r")" + _STOP,
-            re.UNICODE),
+    RelationPattern("executive_of",
+        re.compile(r"(?P<person>" + _NAME + r")\s*[,–\-]?\s*(?:Ch\u1ee7\s+t\u1ecbch|T\u1ed5ng\s+gi\u00e1m\s+\u0111\u1ed1c|Gi\u00e1m\s+\u0111\u1ed1c|CEO|CFO|CTO|COO|Ph\u00f3\s+ch\u1ee7\s+t\u1ecbch|Tr\u01b0\u1edfng\s+ban|Gi\u00e1m\s+\u0111\u1ed1c\s+\u0111i\u1ec1u\s+h\u00e0nh)\s+(?:c\u1ee7a\s+|t\u1ea1i\s+)?(?P<org>" + _NAME + r")" + _STOP, re.UNICODE),
         subj_types={"PERSON"}, obj_types={"ORGANIZATION"}, confidence=0.85),
 
-    # "Nguyễn Minh Anh từng làm việc tại FPT Software từ..."
-    # Lookahead tại cuối org để dừng trước "từ", "đến", "trước"
-    RelationPattern("LÀM VIỆC TẠI",
-        re.compile(
-            r"(?P<person>" + _NAME + r")"
-            r"\s+(?:t\u1eebng\s+)?l\u00e0m\s+vi\u1ec7c\s+t\u1ea1i"
-            r"\s+(?P<org>" + _NAME + r")"
-            r"(?=\s+(?:t\u1eeb|trong|tr\u01b0\u1edbc|sau|\u0111\u1ebfn|,|\.|$))",
-            re.UNICODE),
+    RelationPattern("former_employee",
+        re.compile(r"(?P<person>" + _NAME + r")\s+(?:t\u1eebng\s+)?l\u00e0m\s+vi\u1ec7c\s+t\u1ea1i\s+(?P<org>" + _NAME + r")(?=\s+(?:t\u1eeb|trong|tr\u01b0\u1edbc|sau|\u0111\u1ebfn|,|\.|$))", re.UNICODE),
         subj_types={"PERSON"}, obj_types={"ORGANIZATION"}, confidence=0.80),
 
-    # "Nguyễn Minh Anh sáng lập SaoVietTech"
-    # "... trước khi sáng lập SaoVietTech" — trước khi là optional prefix
-    RelationPattern("SÁNG LẬP",
-        re.compile(
-            r"(?P<person>" + _NAME + r")"
-            r"\s+(?:tr\u01b0\u1edbc\s+khi\s+)?"
-            r"(?:s\u00e1ng\s+l\u1eadp|\u0111\u1ed3ng\s+s\u00e1ng\s+l\u1eadp)"
-            r"\s+(?P<org>" + _NAME + r")" + _STOP,
-            re.UNICODE),
-        subj_types={"PERSON"}, obj_types={"ORGANIZATION"}, confidence=0.85),
+    RelationPattern("founded_by",
+        re.compile(r"(?P<person>" + _NAME + r")\s+(?:tr\u01b0\u1edbc\s+khi\s+)?(?:s\u00e1ng\s+l\u1eadp|\u0111\u1ed3ng\s+s\u00e1ng\s+l\u1eadp)\s+(?P<org>" + _NAME + r")" + _STOP, re.UNICODE),
+        subj_types={"PERSON"}, obj_types={"ORGANIZATION"}, confidence=0.85, reverse_edge=True),
+
+    RelationPattern("interviewed",
+        re.compile(r"(?P<org>" + _NAME + r")\s+(?:ph\u1ecfng\s+v\u1ea5n|trao\s+\u0111\u1ed5i\s+v\u1edbi)\s+(?P<person>" + _NAME + r")" + _STOP, re.UNICODE),
+        subj_types={"ORGANIZATION"}, obj_types={"PERSON"}, confidence=0.75),
 
     # ── Tổ chức × Tổ chức ────────────────────────────────────────
-    # "SaoVietTech hợp tác chiến lược với Global AI Solutions"
-    RelationPattern("HỢP TÁC",
-        re.compile(
-            r"(?P<org1>" + _NAME + r")"
-            r"\s+(?:h\u1ee3p\s+t\u00e1c\s+chi\u1ebfn\s+l\u01b0\u1ee3c"
-            r"|h\u1ee3p\s+t\u00e1c|k\u00fd\s+k\u1ebft|b\u1eaft\s+tay"
-            r"|li\u00ean\s+k\u1ebft|ph\u1ed1i\s+h\u1ee3p"
-            r"|k\u00fd\s+bi\u00ean\s+b\u1ea3n\s+ghi\s+nh\u1edb)"
-            r"\s+(?:c\u00f9ng\s+|v\u1edbi\s+)?"
-            r"(?P<org2>" + _NAME + r")" + _STOP,
-            re.UNICODE),
-        subj_types={"ORGANIZATION"}, obj_types={"ORGANIZATION"},
-        confidence=0.80, bidirectional=True),
+    RelationPattern("strategic_partner",
+        re.compile(r"(?P<org1>" + _NAME + r")\s+(?:h\u1ee3p\s+t\u00e1c\s+chi\u1ebfn\s+l\u01b0\u1ee3c|k\u00fd\s+k\u1ebft\s+chi\u1ebfn\s+l\u01b0\u1ee3c)\s+(?:c\u00f9ng\s+|v\u1edbi\s+)?(?P<org2>" + _NAME + r")" + _STOP, re.UNICODE),
+        subj_types={"ORGANIZATION"}, obj_types={"ORGANIZATION"}, confidence=0.85, bidirectional=True),
 
-    # "SaoVietTech ký thỏa thuận/hợp đồng ... cho/với Hikari"
-    RelationPattern("HỢP TÁC",
-        re.compile(
-            r"(?P<org1>" + _NAME + r")"
-            r"\s+k\u00fd\s+(?:th\u1ecfa\s+thu\u1eadn|h\u1ee3p\s+\u0111\u1ed3ng)"
-            r"(?:\s+\w+){0,5}?"
-            r"\s+(?:cho|v\u1edbi)\s+"
-            r"(?P<org2>" + _NAME + r")" + _STOP,
-            re.UNICODE),
+    RelationPattern("long_term_partner",
+        re.compile(r"(?P<org1>" + _NAME + r")\s+(?:l\u00e0\s+)?(?:đ\u1ed1i\s+t\u00e1c\s+l\u00e2u\s+d\u00e0i|\u0111\u1ed1i\s+t\u00e1c\s+chi\u1ebfn\s+l\u01b0\u1ee3c|h\u1ee3p\s+t\u00e1c\s+l\u00e2u\s+d\u00e0i)\s+(?:c\u1ee7a\s+|v\u1edbi\s+)?(?P<org2>" + _NAME + r")" + _STOP, re.UNICODE),
+        subj_types={"ORGANIZATION"}, obj_types={"ORGANIZATION"}, confidence=0.85, bidirectional=True),
+
+    RelationPattern("supplier_to",
+        re.compile(r"(?P<org1>" + _NAME + r")\s+(?:chuy\u00ean\s+)?(?:cung\s+c\u1ea5p|l\u00e0\s+nh\u00e0\s+cung\s+c\u1ea5p)(?:\s+s\u1ea3n\s+ph\u1ea9m|\s+d\u1ecbch\s+v\u1ee5)?\s+(?:cho\s+)?(?P<org2>" + _NAME + r")" + _STOP, re.UNICODE),
         subj_types={"ORGANIZATION"}, obj_types={"ORGANIZATION"}, confidence=0.82),
 
-    # "SaoVietTech đầu tư vào Hikari"
-    RelationPattern("ĐẦU TƯ",
-        re.compile(
-            r"(?P<investor>" + _NAME + r")"
-            r"\s+(?:\u0111\u1ea7u\s+t\u01b0|r\u00f3t\s+v\u1ed1n|r\u00f3t"
-            r"|g\u00f3p\s+v\u1ed1n|mua\s+c\u1ed5\s+ph\u1ea7n"
-            r"|mua\s+l\u1ea1i|th\u00e2u\s+t\u00f3m)"
-            r"\s+(?:v\u00e0o\s+|cho\s+)?"
-            r"(?P<target>" + _NAME + r")" + _STOP,
-            re.UNICODE),
+    RelationPattern("competitor",
+        re.compile(r"(?P<org1>" + _NAME + r")\s+(?:l\u00e0\s+)?(?:đ\u1ed1i\s+th\u1ee7|c\u1ea1nh\s+tranh|v\u01b0\u1ee3t\s+m\u1eb7t)(?:\s+tr\u1ef1c\s+ti\u1ebfp|\s+ch\u00ednh)?\s+(?:c\u1ee7a\s+|v\u1edbi\s+)?(?P<org2>" + _NAME + r")" + _STOP, re.UNICODE),
+        subj_types={"ORGANIZATION"}, obj_types={"ORGANIZATION"}, confidence=0.82, bidirectional=True),
+
+    RelationPattern("reported_on",
+        re.compile(r"(?P<org1>" + _NAME + r")\s+(?:đ\u01b0a\s+tin|b\u00e1o\s+c\u00e1o|đ\u0103ng\s+tin)\s+(?:v\u1ec1\s+)?(?P<org2>" + _NAME + r")" + _STOP, re.UNICODE),
+        subj_types={"ORGANIZATION"}, obj_types={"ORGANIZATION"}, confidence=0.80),
+
+    RelationPattern("invested_in",
+        re.compile(r"(?P<investor>" + _NAME + r")\s+(?:\u0111\u1ea7u\s+t\u01b0|r\u00f3t|g\u00f3p\s+v\u1ed1n|mua\s+l\u1ea1i|th\u00e2u\s+t\u00f3m)\s+(?:v\u00e0o\s+|cho\s+)?(?P<target>" + _NAME + r")" + _STOP, re.UNICODE),
         subj_types={"ORGANIZATION", "PERSON"}, obj_types={"ORGANIZATION"}, confidence=0.82),
 
     # ── Sản phẩm ─────────────────────────────────────────────────
-    # "SaoVietTech ra mắt VisionX"
-    RelationPattern("SẢN XUẤT",
-        re.compile(
-            r"(?P<company>" + _NAME + r")"
-            r"\s+(?:ra\s+m\u1eaft|s\u1ea3n\s+xu\u1ea5t|ph\u00e1t\s+tri\u1ec3n"
-            r"|tung\s+ra|gi\u1edbi\s+thi\u1ec7u|c\u00f4ng\s+b\u1ed1"
-            r"|ph\u00e1t\s+h\u00e0nh|tr\u00ecnh\s+l\u00e0ng"
-            r"|ch\u00ednh\s+th\u1ee9c\s+ra\s+m\u1eaft|cho\s+ra\s+m\u1eaft)"
-            r"\s+(?P<product>" + _NAME + r")" + _STOP,
-            re.UNICODE),
+    RelationPattern("developed",
+        re.compile(r"(?P<company>" + _NAME + r")\s+(?:ra\s+m\u1eaft|s\u1ea3n\s+xu\u1ea5t|ph\u00e1t\s+tri\u1ec3n|tung\s+ra|gi\u1edbi\s+thi\u1ec7u|c\u00f4ng\s+b\u1ed1)\s+(?P<product>" + _NAME + r")" + _STOP, re.UNICODE),
         subj_types={"ORGANIZATION"}, obj_types={"PRODUCT"}, confidence=0.78),
 
+    RelationPattern("co_developed",
+        re.compile(r"(?P<company>" + _NAME + r")\s+(?:c\u00f9ng\s+ph\u00e1t\s+tri\u1ec3n|\u0111\u1ed3ng\s+ph\u00e1t\s+tri\u1ec3n)\s+(?P<product>" + _NAME + r")" + _STOP, re.UNICODE),
+        subj_types={"ORGANIZATION"}, obj_types={"PRODUCT"}, confidence=0.85),
+
+    RelationPattern("uses_platform",
+        re.compile(r"(?P<subject>" + _NAME + r")\s+(?:s\u1eed\s+d\u1ee5ng|\u1ee9ng\s+d\u1ee5ng|ch\u1ea1y\s+tr\u00ean\s+n\u1ec1n\s+t\u1ea3ng)\s+(?P<product>" + _NAME + r")" + _STOP, re.UNICODE),
+        subj_types={"PRODUCT", "ORGANIZATION"}, obj_types={"PRODUCT"}, confidence=0.80),
+
+    RelationPattern("based_on_research_with",
+        re.compile(r"(?P<product>" + _NAME + r")\s+(?:d\u1ef1a\s+tr\u00ean\s+nghi\u00ean\s+c\u1ee9u|h\u1ee3p\s+t\u00e1c\s+nghi\u00ean\s+c\u1ee9u)\s+(?:c\u00f9ng\s+|v\u1edbi\s+)?(?P<org>" + _NAME + r")" + _STOP, re.UNICODE),
+        subj_types={"PRODUCT"}, obj_types={"ORGANIZATION"}, confidence=0.85),
+
     # ── Địa điểm ─────────────────────────────────────────────────
-    RelationPattern("ĐẶT TẠI",
-        re.compile(
-            r"(?P<org>" + _NAME + r")"
-            r"\s+(?:\u0111\u1eb7t\s+t\u1ea1i|c\u00f3\s+tr\u1ee5\s+s\u1edf\s+t\u1ea1i"
-            r"|ho\u1ea1t\s+\u0111\u1ed9ng\s+t\u1ea1i|\u0111\u1eb7t\s+tr\u1ee5\s+s\u1edf"
-            r"|th\u00e0nh\s+l\u1eadp\s+t\u1ea1i|khai\s+tr\u01b0\u01a1ng\s+t\u1ea1i"
-            r"|m\u1edf\s+r\u1ed9ng\s+t\u1ea1i|c\u00f3\s+v\u0103n\s+ph\u00f2ng\s+t\u1ea1i)"
-            r"\s+(?P<loc>" + _NAME + r")" + _STOP,
-            re.UNICODE),
+    RelationPattern("headquartered_in",
+        re.compile(r"(?P<org>" + _NAME + r")\s+(?:\u0111\u1eb7t\s+t\u1ea1i|c\u00f3\s+tr\u1ee5\s+s\u1edf\s+t\u1ea1i|ho\u1ea1t\s+\u0111\u1ed9ng\s+t\u1ea1i|\u0111\u1eb7t\s+tr\u1ee5\s+s\u1edf)\s+(?P<loc>" + _NAME + r")" + _STOP, re.UNICODE),
+        subj_types={"ORGANIZATION"}, obj_types={"LOCATION"}, confidence=0.75),
+        
+    RelationPattern("has_office_in",
+        re.compile(r"(?P<org>" + _NAME + r")\s+(?:m\u1edf\s+r\u1ed9ng\s+t\u1ea1i|c\u00f3\s+v\u0103n\s+ph\u00f2ng\s+t\u1ea1i|chi\s+nh\u00e1nh\s+t\u1ea1i)\s+(?P<loc>" + _NAME + r")" + _STOP, re.UNICODE),
         subj_types={"ORGANIZATION"}, obj_types={"LOCATION"}, confidence=0.75),
 
     # ── Ngành ────────────────────────────────────────────────────
-    RelationPattern("THUỘC NGÀNH",
-        re.compile(
-            r"(?P<org>" + _NAME + r")"
-            r"\s+(?:thu\u1ed9c\s+l\u0129nh\s+v\u1ef1c|ho\u1ea1t\s+\u0111\u1ed9ng\s+trong"
-            r"|chuy\u00ean\s+v\u1ec1|trong\s+ng\u00e0nh|l\u0129nh\s+v\u1ef1c|ng\u00e0nh)"
-            r"\s+(?P<industry>[\w\s]{2,40})" + _STOP,
-            re.UNICODE),
+    RelationPattern("operates_in",
+        re.compile(r"(?P<org>" + _NAME + r")\s+(?:thu\u1ed9c\s+l\u0129nh\s+v\u1ef1c|ho\u1ea1t\s+\u0111\u1ed9ng\s+trong|chuy\u00ean\s+v\u1ec1|trong\s+ng\u00e0nh|l\u0129nh\s+v\u1ef1c|ng\u00e0nh)\s+(?P<industry>[\w\s]{2,40})" + _STOP, re.UNICODE),
         subj_types={"ORGANIZATION"}, obj_types={"INDUSTRY"}, confidence=0.72),
 
     # ── Sự kiện ──────────────────────────────────────────────────
-    RelationPattern("TỔ CHỨC SỰ KIỆN",
-        re.compile(
-            r"(?P<org>" + _NAME + r")"
-            r"\s+(?:t\u1ed5\s+ch\u1ee9c|\u0111\u0103ng\s+cai|ch\u1ee7\s+tr\u00ec"
-            r"|\u0111\u1ee9ng\s+ra\s+t\u1ed5\s+ch\u1ee9c|kh\u1edfi\s+\u0111\u1ed9ng"
-            r"|ph\u00e1t\s+\u0111\u1ed9ng)"
-            r"\s+(?P<event>" + _NAME + r")" + _STOP,
-            re.UNICODE),
+    RelationPattern("held_event",
+        re.compile(r"(?P<org>" + _NAME + r")\s+(?:t\u1ed5\s+ch\u1ee9c|\u0111\u0103ng\s+cai|ch\u1ee7\s+tr\u00ec|\u0111\u1ee9ng\s+ra\s+t\u1ed5\s+ch\u1ee9c|kh\u1edfi\s+\u0111\u1ed9ng|ph\u00e1t\s+\u0111\u1ed9ng)\s+(?P<event>" + _NAME + r")" + _STOP, re.UNICODE),
         subj_types={"ORGANIZATION"}, obj_types={"EVENT"}, confidence=0.78),
 
-    RelationPattern("XẢY RA TẠI",
-        re.compile(
-            r"(?P<event>" + _NAME + r")"
-            r"\s+(?:di\u1ec5n\s+ra\s+t\u1ea1i|t\u1ed5\s+ch\u1ee9c\s+t\u1ea1i"
-            r"|x\u1ea3y\s+ra\s+t\u1ea1i|\u0111\u01b0\u1ee3c\s+t\u1ed5\s+ch\u1ee9c\s+t\u1ea1i"
-            r"|khai\s+m\u1ea1c\s+t\u1ea1i|di\u1ec5n\s+ra)"
-            r"\s+(?P<loc>" + _NAME + r")" + _STOP,
-            re.UNICODE),
+    RelationPattern("held_in",
+        re.compile(r"(?P<event>" + _NAME + r")\s+(?:di\u1ec5n\s+ra\s+t\u1ea1i|t\u1ed5\s+ch\u1ee9c\s+t\u1ea1i|x\u1ea3y\s+ra\s+t\u1ea1i|\u0111\u01b0\u1ee3c\s+t\u1ed5\s+ch\u1ee9c\s+t\u1ea1i|khai\s+m\u1ea1c\s+t\u1ea1i|di\u1ec5n\s+ra)\s+(?P<loc>" + _NAME + r")" + _STOP, re.UNICODE),
         subj_types={"EVENT"}, obj_types={"LOCATION"}, confidence=0.76),
 
-    RelationPattern("THAM GIA",
-        re.compile(
-            r"(?P<person>" + _NAME + r")"
-            r"\s+(?:tham\s+gia|tham\s+d\u1ef1|xu\u1ea5t\s+hi\u1ec7n\s+t\u1ea1i"
-            r"|c\u00f3\s+m\u1eb7t\s+t\u1ea1i|ph\u00e1t\s+bi\u1ec3u\s+t\u1ea1i)"
-            r"\s+(?P<event>" + _NAME + r")" + _STOP,
-            re.UNICODE),
+    RelationPattern("participated_in",
+        re.compile(r"(?P<person>" + _NAME + r")\s+(?:tham\s+gia|tham\s+d\u1ef1|xu\u1ea5t\s+hi\u1ec7n\s+t\u1ea1i|c\u00f3\s+m\u1eb7t\s+t\u1ea1i|ph\u00e1t\s+bi\u1ec3u\s+t\u1ea1i)\s+(?P<event>" + _NAME + r")" + _STOP, re.UNICODE),
         subj_types={"PERSON"}, obj_types={"EVENT"}, confidence=0.73),
 
     # ── Tài chính ────────────────────────────────────────────────
-    RelationPattern("CÓ GIÁ TRỊ",
-        re.compile(
-            r"(?P<entity>" + _NAME + r")"
-            r"\s+(?:tr\u1ecb\s+gi\u00e1|c\u00f3\s+gi\u00e1\s+tr\u1ecb|\u0111\u1ea1t"
-            r"|gi\u00e1\s+tr\u1ecb\s+kho\u1ea3ng|\u01b0\u1edbc\s+t\u00ednh)"
-            r"\s+(?P<money>\d[\d.,]*\s*(?:tri\u1ec7u|t\u1ef7|ngh\u00ecn|ng\u00e0n)?"
-            r"\s*(?:USD|VND|VN\u0110|\u0111\u1ed3ng|\u0111\u00f4)?)",
-            re.UNICODE),
+    RelationPattern("valued_at",
+        re.compile(r"(?P<entity>" + _NAME + r")\s+(?:tr\u1ecb\s+gi\u00e1|c\u00f3\s+gi\u00e1\s+tr\u1ecb|\u0111\u1ea1t|gi\u00e1\s+tr\u1ecb\s+kho\u1ea3ng|\u01b0\u1edbc\s+t\u00ednh)\s+(?P<money>\d[\d.,]*\s*(?:tri\u1ec7u|t\u1ef7|ngh\u00ecn|ng\u00e0n)?\s*(?:USD|VND|VN\u0110|\u0111\u1ed3ng|\u0111\u00f4)?)", re.UNICODE),
         subj_types=None, obj_types=None, confidence=0.75),
 
-    RelationPattern("TĂNG TRƯỞNG",
-        re.compile(
-            r"(?P<entity>" + _NAME + r")"
-            r"\s+(?:t\u0103ng\s+tr\u01b0\u1edfng|t\u0103ng|\u0111\u1ea1t"
-            r"|ghi\s+nh\u1eadn|t\u0103ng\s+l\u00ean)"
-            r"\s+(?P<pct>\d[\d.,]*\s*%(?:/n\u0103m)?)",
-            re.UNICODE),
+    RelationPattern("growth_rate",
+        re.compile(r"(?P<entity>" + _NAME + r")\s+(?:t\u0103ng\s+tr\u01b0\u1edfng|t\u0103ng|\u0111\u1ea1t|ghi\s+nh\u1eadn|t\u0103ng\s+l\u00ean)\s+(?P<pct>\d[\d.,]*\s*%(?:/n\u0103m)?)", re.UNICODE),
         subj_types=None, obj_types=None, confidence=0.70),
 ]
 
@@ -407,7 +343,7 @@ def _is_informative(name: str, gtype: str) -> bool:
     
     # Lọc rác một chữ chung chung cho Organization
     if gtype == "Organization":
-        bad_org_words = {"công ty", "tập đoàn", "tổng công ty", "group", "holdings", "inc", "corp", "hiệp hội", "ngân hàng", "ban", "ngành", "phòng", "văn phòng", "chi nhánh", "trung tâm"}
+        bad_org_words = {"công ty", "tập đoàn", "Tập đoàn công ty", "tổng công ty", "group", "holdings", "inc", "corp", "hiệp hội", "ngân hàng", "ban", "ngành", "phòng", "văn phòng", "chi nhánh", "trung tâm"}
         if low in bad_org_words:
             return False
         # Các cụm kiểu "Group phòng", "Group chính"
@@ -477,12 +413,17 @@ def _extract_pattern_relations(
                 se = _best_entity_match(st, entities, pat.subj_types)
                 oe = _best_entity_match(ot, entities, pat.obj_types)
 
+                
+
                 if se is None and pat.subj_types is not None:
                     continue
                 if oe is None and pat.obj_types is not None:
                     continue
                 if se is None or oe is None or se.id == oe.id:
                     continue
+                    
+                if pat.reverse_edge:
+                    se, oe = oe, se
 
                 lbl = pat.name
                 tk  = _tk(se.id, oe.id, lbl)
@@ -578,8 +519,8 @@ def _extract_cooccurrence_relations(
 def _resolve_aliases(entities: list[Entity], text: str) -> list[Entity]:
     alias_map = {}
     
-    # 1. Ngoặc đơn: "Công ty Cổ phần Công nghệ Sao Việt (SaoVietTech)" hoặc "Tập đoàn ABC (ABC-Corp)"
-    for m in re.finditer(r"([A-Z\u00C0-\u1EF9][a-zA-Z0-9\s,\u00C0-\u1EF9]+)\s*\(\s*([^)]+)\s*\)", text):
+    # 1. Ngoặc đơn: "Công ty Cổ phần Công nghệ Sao Việt (SaoVietTech)"
+    for m in re.finditer(r"([A-Z\u00C0-\u1EF9][\w\s,\u00C0-\u1EF9&]+)\s*\(\s*([^)]+)\s*\)", text):
         full = _norm(m.group(1))
         al = _norm(m.group(2))
         if 2 <= len(al) < len(full):
@@ -601,6 +542,14 @@ def _resolve_aliases(entities: list[Entity], text: str) -> list[Entity]:
                  a_words = set(a_low.split()) - stopwords_org
                  if len(a_words) > 0 and a_words.issubset(p_words):
                      alias_map[a_low] = p_low
+                 else:
+                     # Gỡ bí danh CamelCase: SaoVietTech -> Sao, Viet, Tech
+                     camel_parts = [p.lower() for p in re.findall(r'[A-Z]?[a-z]+|[A-Z]+', alias)]
+                     import unicodedata
+                     p_unaccent = unicodedata.normalize('NFD', p_low).encode('ascii', 'ignore').decode('utf-8')
+                     matching_parts = [p for p in camel_parts if p in p_low or p in p_unaccent]
+                     if len(camel_parts) >= 2 and len(matching_parts) >= 2:
+                         alias_map[a_low] = p_low
 
     # 3. Xử lý Person
     pers = [e for e in entities if e.type == "Person"]
@@ -640,7 +589,7 @@ def _resolve_aliases(entities: list[Entity], text: str) -> list[Entity]:
 
 
 def _fold_properties(entities: list[Entity], relations: list[Relation]) -> tuple[list[Entity], list[Relation]]:
-    kept_types = {"Organization", "Person", "Product", "Event"}
+    kept_types = {"Organization", "Person", "Product", "Event", "Location"}
     final_entities = {e.id: e for e in entities}
     final_relations = []
     
@@ -652,14 +601,14 @@ def _fold_properties(entities: list[Entity], relations: list[Relation]) -> tuple
             
         if tgt.type not in kept_types:
             prop_key = r.label.title()
-            if r.label == "THÀNH LẬP": prop_key = "Founded"
-            elif r.label == "ĐẶT TẠI": prop_key = "Headquarters"
-            elif r.label == "CÓ GIÁ TRỊ" or r.label == "GIÁ" or r.label == "NGÂN SÁCH": prop_key = "Value"
-            elif r.label == "THU NHẬP": prop_key = "Income"
-            elif r.label == "TĂNG TRƯỞNG": prop_key = "Growth"
-            elif r.label == "DIỄN RA VÀO" or r.label == "RA MẮT": prop_key = "Date"
-            elif r.label == "XẢY RA TẠI" or r.label == "RA MẮT TẠI" or r.label == "Ở TẠI": prop_key = "Location"
-            elif r.label == "THUỘC NGÀNH" or r.label == "HOẠT ĐỘNG TRONG": prop_key = "Industry"
+            if r.label == "founded_in": prop_key = "Founded"
+            elif r.label in ["headquartered_in", "located_in"]: prop_key = "Headquarters"
+            elif r.label in ["valued_at", "priced_at"]: prop_key = "Value"
+            elif r.label == "income": prop_key = "Income"
+            elif r.label == "growth_rate": prop_key = "Growth"
+            elif r.label in ["held_on", "launched_on"]: prop_key = "Date"
+            elif r.label == "held_in": prop_key = "Location"
+            elif r.label in ["operates_in", "works_in"]: prop_key = "Industry"
             
             src.properties.append(EntityProperty(key=prop_key, value=tgt.name))
         
@@ -668,19 +617,7 @@ def _fold_properties(entities: list[Entity], relations: list[Relation]) -> tuple
             
         else:
             final_relations.append(r)
-            if r.label == "LÃNH ĐẠO" or r.label == "CÓ THÀNH VIÊN" or r.label == "LIÊN QUAN":
-                if src.type == "Person" and tgt.type == "Organization":
-                    src.properties.append(EntityProperty(key="Role", value=f"Lãnh đạo tại {tgt.name}"))
-                elif src.type == "Organization" and tgt.type == "Person":
-                    tgt.properties.append(EntityProperty(key="Role", value=f"Thành viên của {src.name}"))
-            elif r.label == "LÀM VIỆC TẠI":
-                src.properties.append(EntityProperty(key="Employment", value=tgt.name))
-            elif r.label == "SÁNG LẬP":
-                src.properties.append(EntityProperty(key="Role", value=f"Founder of {tgt.name}"))
-            elif r.label == "HỢP TÁC":
-                src.properties.append(EntityProperty(key="Partner", value=tgt.name))
-                tgt.properties.append(EntityProperty(key="Partner", value=src.name))
-                
+            
     filtered_entities = [e for e in final_entities.values() if e.type in kept_types]
     
     for e in filtered_entities:

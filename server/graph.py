@@ -127,6 +127,7 @@ class RelationPattern:
 # Shared building blocks
 _VI_CAP = r"[A-Z\u00C0-\u024F\u1EA0-\u1EF9\u0110\u0111]"
 
+
 # ORG/PERSON name: bắt đầu uppercase, gồm chữ cái + ký hiệu phổ biến
 _NAME = _VI_CAP + r"(?:[\w&,\./]+" + r"(?:\s+" + _VI_CAP + r"[\w&,\./]+)*)"
 
@@ -159,10 +160,37 @@ RELATION_PATTERNS: list[RelationPattern] = [
         re.compile(r"(?P<org>" + _NAME + r")\s+(?:ph\u1ecfng\s+v\u1ea5n|trao\s+\u0111\u1ed5i\s+v\u1edbi)\s+(?P<person>" + _NAME + r")" + _STOP, re.UNICODE),
         subj_types={"ORGANIZATION"}, obj_types={"PERSON"}, confidence=0.75),
 
+    # ORG được thành lập ... bởi PERSON — passive form
+    RelationPattern("founded_by_passive",
+        re.compile(
+            r"(?P<org>" + _NAME + r")\s*(?:\([^)]+\))?\s*"
+            r"\u0111\u01b0\u1ee3c\s+th\u00e0nh\s+l\u1eadp(?:[^b\n]{0,60}?)"
+            r"b\u1edfi\s+(?P<person>" + _NAME + r")",
+            re.UNICODE,
+        ),
+        subj_types={"ORGANIZATION"}, obj_types={"PERSON"}, confidence=0.88, reverse_edge=True),
+
     # ── Tổ chức × Tổ chức ────────────────────────────────────────
+    # Ký thỏa thuận hợp tác chiến lược với — phải đặt trước strategic_partner
+    RelationPattern("signed_strategic_partnership",
+        re.compile(
+            r"(?P<org1>" + _NAME + r")\s+k\u00fd\s+th\u1ecfa\s+thu\u1eadn\s+h\u1ee3p\s+t\u00e1c"
+            r"(?:\s+chi\u1ebfn\s+l\u01b0\u1ee3c)?\s+v\u1edbi\s+(?P<org2>" + _NAME + r")" + _STOP,
+            re.UNICODE,
+        ),
+        subj_types={"ORGANIZATION"}, obj_types={"ORGANIZATION"}, confidence=0.92),
+
     RelationPattern("strategic_partner",
         re.compile(r"(?P<org1>" + _NAME + r")\s+(?:h\u1ee3p\s+t\u00e1c\s+chi\u1ebfn\s+l\u01b0\u1ee3c|k\u00fd\s+k\u1ebft\s+chi\u1ebfn\s+l\u01b0\u1ee3c)\s+(?:c\u00f9ng\s+|v\u1edbi\s+)?(?P<org2>" + _NAME + r")" + _STOP, re.UNICODE),
         subj_types={"ORGANIZATION"}, obj_types={"ORGANIZATION"}, confidence=0.85, bidirectional=True),
+
+    RelationPattern("partnered_with",
+        re.compile(
+            r"(?P<org1>" + _NAME + r")\s+l\u00e0\s+\u0111\u1ed1i\s+t\u00e1c\s+l\u00e2u\s+n\u0103m"
+            r"\s+(?:c\u1ee7a\s+|v\u1edbi\s+)?(?P<org2>" + _NAME + r")" + _STOP,
+            re.UNICODE,
+        ),
+        subj_types={"ORGANIZATION"}, obj_types={"ORGANIZATION"}, confidence=0.88),
 
     RelationPattern("long_term_partner",
         re.compile(r"(?P<org1>" + _NAME + r")\s+(?:l\u00e0\s+)?(?:đ\u1ed1i\s+t\u00e1c\s+l\u00e2u\s+d\u00e0i|\u0111\u1ed1i\s+t\u00e1c\s+chi\u1ebfn\s+l\u01b0\u1ee3c|h\u1ee3p\s+t\u00e1c\s+l\u00e2u\s+d\u00e0i)\s+(?:c\u1ee7a\s+|v\u1edbi\s+)?(?P<org2>" + _NAME + r")" + _STOP, re.UNICODE),
@@ -184,6 +212,15 @@ RELATION_PATTERNS: list[RelationPattern] = [
         re.compile(r"(?P<investor>" + _NAME + r")\s+(?:\u0111\u1ea7u\s+t\u01b0|r\u00f3t|g\u00f3p\s+v\u1ed1n|mua\s+l\u1ea1i|th\u00e2u\s+t\u00f3m)\s+(?:v\u00e0o\s+|cho\s+)?(?P<target>" + _NAME + r")" + _STOP, re.UNICODE),
         subj_types={"ORGANIZATION", "PERSON"}, obj_types={"ORGANIZATION"}, confidence=0.82),
 
+    # Ký hợp đồng cung cấp PRODUCT cho ORG
+    RelationPattern("supplied_product_to",
+        re.compile(
+            r"(?P<org1>" + _NAME + r")\s+k\u00fd\s+h\u1ee3p\s+\u0111\u1ed3ng\s+cung\s+c\u1ea5p"
+            r"(?:\s+" + _NAME + r")?\s+cho\s+(?P<org2>" + _NAME + r")" + _STOP,
+            re.UNICODE,
+        ),
+        subj_types={"ORGANIZATION"}, obj_types={"ORGANIZATION"}, confidence=0.90),
+
     # ── Sản phẩm ─────────────────────────────────────────────────
     RelationPattern("developed",
         re.compile(r"(?P<company>" + _NAME + r")\s+(?:ra\s+m\u1eaft|s\u1ea3n\s+xu\u1ea5t|ph\u00e1t\s+tri\u1ec3n|tung\s+ra|gi\u1edbi\s+thi\u1ec7u|c\u00f4ng\s+b\u1ed1)\s+(?P<product>" + _NAME + r")" + _STOP, re.UNICODE),
@@ -193,22 +230,44 @@ RELATION_PATTERNS: list[RelationPattern] = [
         re.compile(r"(?P<company>" + _NAME + r")\s+(?:c\u00f9ng\s+ph\u00e1t\s+tri\u1ec3n|\u0111\u1ed3ng\s+ph\u00e1t\s+tri\u1ec3n)\s+(?P<product>" + _NAME + r")" + _STOP, re.UNICODE),
         subj_types={"ORGANIZATION"}, obj_types={"PRODUCT"}, confidence=0.85),
 
+    # ORG s\u1eed d\u1ee5ng n\u1ec1n t\u1ea3ng NAME (b\u1eaft \u0111\u1ea7u b\u1eb1ng \"n\u1ec1n t\u1ea3ng\")
     RelationPattern("uses_platform",
-        re.compile(r"(?P<subject>" + _NAME + r")\s+(?:s\u1eed\s+d\u1ee5ng|\u1ee9ng\s+d\u1ee5ng|ch\u1ea1y\s+tr\u00ean\s+n\u1ec1n\s+t\u1ea3ng)\s+(?P<product>" + _NAME + r")" + _STOP, re.UNICODE),
-        subj_types={"PRODUCT", "ORGANIZATION"}, obj_types={"PRODUCT"}, confidence=0.80),
+        re.compile(
+            r"(?P<subject>" + _NAME + r")\s+s\u1eed\s+d\u1ee5ng\s+(?:n\u1ec1n\s+t\u1ea3ng\s+)?(?P<product>" + _NAME + r")" + _STOP,
+            re.UNICODE,
+        ),
+        subj_types={"PRODUCT", "ORGANIZATION"}, obj_types={"PRODUCT"}, confidence=0.82),
 
+    # PRODUCT do (nh\u00f3m nghi\u00ean c\u1ee9u c\u1ee7a) ORG ph\u00e1t tri\u1ec3n
+    RelationPattern("developed_by_passive",
+        re.compile(
+            r"(?P<product>" + _NAME + r")\s+do\s+(?:nh\u00f3m\s+nghi\u00ean\s+c\u1ee9u\s+c\u1ee7a\s+)?(?P<org>" + _NAME + r")\s+ph\u00e1t\s+tri\u1ec3n",
+            re.UNICODE,
+        ),
+        subj_types={"PRODUCT"}, obj_types={"ORGANIZATION"}, confidence=0.88, reverse_edge=True),
+
+    # VisionX \u0111\u01b0\u1ee3c x\u00e2y d\u1ef1ng d\u1ef1a tr\u00ean c\u00e1c nghi\u00ean c\u1ee9u h\u1ee3p t\u00e1c v\u1edbi \u0110\u1ea1i h\u1ecdc B\u00e1ch Khoa
     RelationPattern("based_on_research_with",
-        re.compile(r"(?P<product>" + _NAME + r")\s+(?:d\u1ef1a\s+tr\u00ean\s+nghi\u00ean\s+c\u1ee9u|h\u1ee3p\s+t\u00e1c\s+nghi\u00ean\s+c\u1ee9u)\s+(?:c\u00f9ng\s+|v\u1edbi\s+)?(?P<org>" + _NAME + r")" + _STOP, re.UNICODE),
-        subj_types={"PRODUCT"}, obj_types={"ORGANIZATION"}, confidence=0.85),
+        re.compile(
+            r"(?P<product>" + _NAME + r")\s+(?:\u0111\u01b0\u1ee3c\s+x\u00e2y\s+d\u1ef1ng\s+)?d\u1ef1a\s+tr\u00ean"
+            r"\s+(?:c\u00e1c\s+)?nghi\u00ean\s+c\u1ee9u\s+h\u1ee3p\s+t\u00e1c\s+v\u1edbi\s+(?P<org>" + _NAME + r")" + _STOP,
+            re.UNICODE,
+        ),
+        subj_types={"PRODUCT"}, obj_types={"ORGANIZATION"}, confidence=0.88),
 
     # ── Địa điểm ─────────────────────────────────────────────────
     RelationPattern("headquartered_in",
         re.compile(r"(?P<org>" + _NAME + r")\s+(?:\u0111\u1eb7t\s+t\u1ea1i|c\u00f3\s+tr\u1ee5\s+s\u1edf\s+t\u1ea1i|ho\u1ea1t\s+\u0111\u1ed9ng\s+t\u1ea1i|\u0111\u1eb7t\s+tr\u1ee5\s+s\u1edf)\s+(?P<loc>" + _NAME + r")" + _STOP, re.UNICODE),
         subj_types={"ORGANIZATION"}, obj_types={"LOCATION"}, confidence=0.75),
         
-    RelationPattern("has_office_in",
-        re.compile(r"(?P<org>" + _NAME + r")\s+(?:m\u1edf\s+r\u1ed9ng\s+t\u1ea1i|c\u00f3\s+v\u0103n\s+ph\u00f2ng\s+t\u1ea1i|chi\s+nh\u00e1nh\s+t\u1ea1i)\s+(?P<loc>" + _NAME + r")" + _STOP, re.UNICODE),
-        subj_types={"ORGANIZATION"}, obj_types={"LOCATION"}, confidence=0.75),
+    # Mở thêm văn phòng đại diện tại — fix đẻ cover cấu trúc thực tế
+    RelationPattern("opened_office_in",
+        re.compile(
+            r"(?P<org>" + _NAME + r")\s+m\u1edf\s+(?:th\u00eam\s+)?(?:v\u0103n\s+ph\u00f2ng"
+            r"(?:\s+\u0111\u1ea1i\s+di\u1ec7n)?|chi\s+nh\u00e1nh)\s+(?:t\u1ea1i\s+)?(?P<loc>" + _NAME + r")" + _STOP,
+            re.UNICODE,
+        ),
+        subj_types={"ORGANIZATION"}, obj_types={"LOCATION"}, confidence=0.85),
 
     # ── Ngành ────────────────────────────────────────────────────
     RelationPattern("operates_in",
@@ -219,6 +278,15 @@ RELATION_PATTERNS: list[RelationPattern] = [
     RelationPattern("held_event",
         re.compile(r"(?P<org>" + _NAME + r")\s+(?:t\u1ed5\s+ch\u1ee9c|\u0111\u0103ng\s+cai|ch\u1ee7\s+tr\u00ec|\u0111\u1ee9ng\s+ra\s+t\u1ed5\s+ch\u1ee9c|kh\u1edfi\s+\u0111\u1ed9ng|ph\u00e1t\s+\u0111\u1ed9ng)\s+(?P<event>" + _NAME + r")" + _STOP, re.UNICODE),
         subj_types={"ORGANIZATION"}, obj_types={"EVENT"}, confidence=0.78),
+
+    # PRODUCT chính thức ra mắt ... tại sự kiện EVENT
+    RelationPattern("launched_at_event",
+        re.compile(
+            r"(?P<product>" + _NAME + r")\s+(?:ch\u00ednh\s+th\u1ee9c\s+)?ra\s+m\u1eaft"
+            r"(?:[^\n]{0,60}?)t\u1ea1i\s+(?:s\u1ef1\s+ki\u1ec7n\s+)?(?P<event>" + _NAME + r")" + _STOP,
+            re.UNICODE,
+        ),
+        subj_types={"PRODUCT"}, obj_types={"EVENT"}, confidence=0.88),
 
     RelationPattern("held_in",
         re.compile(r"(?P<event>" + _NAME + r")\s+(?:di\u1ec5n\s+ra\s+t\u1ea1i|t\u1ed5\s+ch\u1ee9c\s+t\u1ea1i|x\u1ea3y\s+ra\s+t\u1ea1i|\u0111\u01b0\u1ee3c\s+t\u1ed5\s+ch\u1ee9c\s+t\u1ea1i|khai\s+m\u1ea1c\s+t\u1ea1i|di\u1ec5n\s+ra)\s+(?P<loc>" + _NAME + r")" + _STOP, re.UNICODE),
@@ -516,6 +584,20 @@ def _extract_cooccurrence_relations(
 # §9 — Graph Structuring (Alias & Coreference)
 # ═══════════════════════════════════════════════════════════════════
 
+def _is_camelcase_of(alias: str, primary: str) -> bool:
+    """Kiểm tra alias có phải là CamelCase viết tắt của primary không.
+    VD: SaoVietTech → 'sao', 'viet', 'tech' đều có trong 'Công nghệ Sao Việt'."""
+    if not re.search(r'[a-z][A-Z]', alias):
+        return False
+    camel_parts = [p.lower() for p in re.findall(r'[A-Z]?[a-z]+|[A-Z]+', alias)]
+    if len(camel_parts) < 2:
+        return False
+    import unicodedata
+    p_unaccent = unicodedata.normalize('NFD', primary.lower()).encode('ascii', 'ignore').decode('utf-8')
+    matches = sum(1 for p in camel_parts if p in primary.lower() or p in p_unaccent)
+    return matches >= len(camel_parts)
+
+
 def _resolve_aliases(entities: list[Entity], text: str) -> list[Entity]:
     alias_map = {}
     
@@ -526,30 +608,14 @@ def _resolve_aliases(entities: list[Entity], text: str) -> list[Entity]:
         if 2 <= len(al) < len(full):
             alias_map[al.lower()] = full.lower()
 
-    # 2. Xử lý Organization
-    orgs = [e for e in entities if e.type == "Organization"]
+    # 2. Org-org: CHỈ merge qua CamelCase rõ ràng (không dùng word-subset vì merge sai)
+    orgs      = [e for e in entities if e.type == "Organization"]
     org_texts = sorted([e.name for e in orgs], key=len, reverse=True)
-    stopwords_org = {"công", "ty", "tập", "đoàn", "group", "holdings", "inc", "corp", "jsc", "ltd", "cổ", "phần", "tnhh"}
     for i, primary in enumerate(org_texts):
-        p_low = primary.lower()
-        p_words = set(p_low.split()) - stopwords_org
-        for alias in org_texts[i+1:]:
+        for alias in org_texts[i + 1:]:
             a_low = alias.lower()
-            if a_low in alias_map: continue
-            if a_low in p_low and len(a_low) >= 4 and a_low not in stopwords_org:
-                 alias_map[a_low] = p_low
-            else:
-                 a_words = set(a_low.split()) - stopwords_org
-                 if len(a_words) > 0 and a_words.issubset(p_words):
-                     alias_map[a_low] = p_low
-                 else:
-                     # Gỡ bí danh CamelCase: SaoVietTech -> Sao, Viet, Tech
-                     camel_parts = [p.lower() for p in re.findall(r'[A-Z]?[a-z]+|[A-Z]+', alias)]
-                     import unicodedata
-                     p_unaccent = unicodedata.normalize('NFD', p_low).encode('ascii', 'ignore').decode('utf-8')
-                     matching_parts = [p for p in camel_parts if p in p_low or p in p_unaccent]
-                     if len(camel_parts) >= 2 and len(matching_parts) >= 2:
-                         alias_map[a_low] = p_low
+            if a_low not in alias_map and _is_camelcase_of(alias, primary):
+                alias_map[a_low] = primary.lower()
 
     # 3. Xử lý Person
     pers = [e for e in entities if e.type == "Person"]
@@ -562,11 +628,15 @@ def _resolve_aliases(entities: list[Entity], text: str) -> list[Entity]:
                 if a_low in p_low:
                      alias_map[a_low] = p_low
 
-    # Thống nhất node
-    merged = {}
-    def get_root(name_lower):
-        curr = name_lower
+    # Thống nhất node (cycle-safe)
+    merged: dict[str, Entity] = {}
+
+    def get_root(name_lower: str) -> str:
+        curr, visited = name_lower, set()
         while curr in alias_map and alias_map[curr] != curr:
+            if curr in visited:
+                break
+            visited.add(curr)
             curr = alias_map[curr]
         return curr
 
@@ -575,63 +645,137 @@ def _resolve_aliases(entities: list[Entity], text: str) -> list[Entity]:
         if root_low not in merged:
             merged[root_low] = e
         else:
-            if e.name not in merged[root_low].aliases and e.name.lower() != merged[root_low].name.lower():
-                merged[root_low].aliases.append(e.name)
-                # Ghép tên Alias vào tên hiển thị nếu nó đáp ứng điều kiện (ngắn gọn, chưa có)
-                p_name = merged[root_low].name
-                if "(" not in p_name and e.name not in p_name and len(e.name) <= len(p_name) - 5 and len(e.name.split()) <= 3:
-                     merged[root_low].name = f"{p_name} ({e.name})"
+            primary_e = merged[root_low]
+            if e.name.lower() != primary_e.name.lower() and e.name not in primary_e.aliases:
+                # Chỉ add alias nếu nó được phát hiện qua parenthetical/camelcase
+                if e.name.lower() in alias_map:
+                    primary_e.aliases.append(e.name)
+                    p_name = primary_e.name
+                    if "(" not in p_name and len(e.name) <= len(p_name) - 5 and len(e.name.split()) <= 3:
+                        primary_e.name = f"{p_name} ({e.name})"
             for p in e.properties:
-                if not any(mp.key == p.key and mp.value == p.value for mp in merged[root_low].properties):
-                    merged[root_low].properties.append(p)
+                if not any(mp.key == p.key and mp.value == p.value for mp in primary_e.properties):
+                    primary_e.properties.append(p)
 
     return list(merged.values())
 
 
 def _fold_properties(entities: list[Entity], relations: list[Relation]) -> tuple[list[Entity], list[Relation]]:
-    kept_types = {"Organization", "Person", "Product", "Event", "Location"}
+    kept_types  = {"Organization", "Person", "Product", "Event", "Location"}
     final_entities = {e.id: e for e in entities}
-    final_relations = []
-    
+    final_relations: list[Relation] = []
+
+    # Bảng map label → property key rõ ràng
+    _LABEL_TO_PROP: dict[str, str] = {
+        "founded_in":              "Founded",
+        "headquartered_in":        "Headquarters",
+        "located_in":              "Headquarters",
+        "valued_at":               "Value",
+        "priced_at":               "Value",
+        "income":                  "Income",
+        "growth_rate":             "Growth",
+        "held_on":                 "Date",
+        "launched_on":             "Launch Date",
+        "held_in":                 "Location",
+        "operates_in":             "Industry",
+        "works_in":                "Industry",
+    }
+
     for r in relations:
         src = final_entities.get(r.source)
         tgt = final_entities.get(r.target)
         if not src or not tgt:
             continue
-            
+
         if tgt.type not in kept_types:
-            prop_key = r.label.title()
-            if r.label == "founded_in": prop_key = "Founded"
-            elif r.label in ["headquartered_in", "located_in"]: prop_key = "Headquarters"
-            elif r.label in ["valued_at", "priced_at"]: prop_key = "Value"
-            elif r.label == "income": prop_key = "Income"
-            elif r.label == "growth_rate": prop_key = "Growth"
-            elif r.label in ["held_on", "launched_on"]: prop_key = "Date"
-            elif r.label == "held_in": prop_key = "Location"
-            elif r.label in ["operates_in", "works_in"]: prop_key = "Industry"
-            
+            prop_key = _LABEL_TO_PROP.get(r.label, r.label.replace("_", " ").title())
             src.properties.append(EntityProperty(key=prop_key, value=tgt.name))
-        
         elif src.type not in kept_types:
             tgt.properties.append(EntityProperty(key=f"Has {src.type}", value=src.name))
-            
         else:
             final_relations.append(r)
-            
+
     filtered_entities = [e for e in final_entities.values() if e.type in kept_types]
-    
+
     for e in filtered_entities:
-        seen_props = set()
-        new_props = []
+        seen_props: set[tuple] = set()
+        new_props: list[EntityProperty] = []
         for p in e.properties:
-            if p.key == "NER Type": continue
+            if p.key == "NER Type":
+                continue
             k = (p.key, p.value)
             if k not in seen_props:
                 seen_props.add(k)
                 new_props.append(p)
         e.properties = new_props
-        
+
     return filtered_entities, final_relations
+
+
+# ═══════════════════════════════════════════════════════════════════
+# §9.5 — Multi-entity pattern extractor
+# Xử lý các cấu trúc danh sách: 'bởi A và B', 'như A và B'
+# ═══════════════════════════════════════════════════════════════════
+
+def _extract_multi_entity_relations(
+    entities: list[Entity],
+    text: str,
+    existing_pk: set[tuple[str, str]],
+) -> list[Relation]:
+    """
+    Xử lý các cấu trúc 1-to-many khó dùng regex 2-group thông thưởng:
+      1. 'ORG được thành lập ... bởi PERSON1 và PERSON2'
+         → 2 relations founded (PERSON1,2 → ORG)
+      2. '... cạnh tranh với các đối thủ như ORG1 và ORG2'
+         → 2 relations competitor_of (ORG_main → ORG1,2)
+    """
+    rels: list[Relation] = []
+
+    # -- (1) Multi-founder: 'bởi PERSON1 và PERSON2'
+    persons = [e for e in entities if e.type == "Person"]
+    orgs    = [e for e in entities if e.type == "Organization"]
+    for m in re.finditer(
+        r"(?P<org>[A-Z\u00C0-\u1EF9][\w\s,\u00C0-\u1EF9&]+?)"
+        r"\s*(?:\([^)]+\))?\s*"
+        r"\u0111\u01b0\u1ee3c\s+th\u00e0nh\s+l\u1eadp(?:[^b\n]{0,80}?)"
+        r"b\u1edfi\s+(?P<p1>[A-Z\u00C0-\u1EF9][\w\s\u00C0-\u1EF9]+?)"
+        r"\s+v\u00e0\s+(?P<p2>[A-Z\u00C0-\u1EF9][\w\s\u00C0-\u1EF9]+?)"
+        r"(?=[,\.\n]|$)",
+        text,
+    ):
+        org_e  = _best_entity_match(m.group("org").strip(), orgs, {"ORGANIZATION"})
+        per1_e = _best_entity_match(m.group("p1").strip(), persons, {"PERSON"})
+        per2_e = _best_entity_match(m.group("p2").strip(), persons, {"PERSON"})
+        for pe in [per1_e, per2_e]:
+            if pe and org_e and pe.id != org_e.id:
+                pk = _pk(pe.id, org_e.id)
+                if pk not in existing_pk:
+                    existing_pk.add(pk)
+                    rels.append(Relation(source=pe.id, target=org_e.id, label="founded"))
+
+    # -- (2) Competitor list: 'như ORG1 và ORG2'
+    # Tìm câu chứa 'cạnh tranh ... như' và extract tất cả ORG được mention sau 'như'
+    for m in re.finditer(
+        r"(?P<main>[A-Z\u00C0-\u1EF9][\w\s\u00C0-\u1EF9&]+?)"
+        r"(?:\s+m\u1edf\s+r\u1ed9ng)?\s+c\u1ee7ng\s+c\u1ed1\s+v\u1ecb\s+th\u1ebf\s+c\u1ea1nh\s+tranh"
+        r"[^n\n]{0,60}?nh\u01b0\s+(?P<oc>[A-Z\u00C0-\u1EF9][\w\s,\u00C0-\u1EF9&]+?)(?=[,\.\n]|$)",
+        text,
+    ):
+        main_e = _best_entity_match(m.group("main").strip(), orgs, {"ORGANIZATION"})
+        if not main_e:
+            continue
+        # Tách danh sách '... và ...'
+        parts = re.split(r'\s+và\s+|,\s*', m.group("oc"))
+        for part in parts:
+            competitor_e = _best_entity_match(part.strip(), orgs, {"ORGANIZATION"})
+            if competitor_e and competitor_e.id != main_e.id:
+                pk = _pk(main_e.id, competitor_e.id)
+                if pk not in existing_pk:
+                    existing_pk.add(pk)
+                    rels.append(Relation(source=main_e.id, target=competitor_e.id, label="competitor_of"))
+
+    return rels
+
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -696,7 +840,12 @@ def build_graph(raw_entities: list[dict], text: str) -> GraphData:
     cooc_rels = _extract_cooccurrence_relations(entities, sentences, existing_pk)
     logger.debug("Tầng 3 (co-occ): %d", len(cooc_rels))
 
-    all_rels = pat_rels + kb_rels + cooc_rels
+    # ── Tầng 1.5 — Multi-entity patterns (bởi A và B, như A và B) ─────
+    multi_rels = _extract_multi_entity_relations(entities, text, existing_pk)
+    logger.debug("Tầng 1.5 (multi-entity): %d", len(multi_rels))
+
+    all_rels = pat_rels + multi_rels + kb_rels + cooc_rels
+
     
     # ── Fold thuộc tính vào Nodes ──────────────────────────────
     final_entities, final_relations = _fold_properties(entities, all_rels)

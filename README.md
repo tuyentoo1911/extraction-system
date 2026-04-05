@@ -1,96 +1,194 @@
-# Knowledge Graph Extractor
+ # Knowledge Graph Extractor
 
-Hệ thống trích xuất thông tin từ tài liệu, nhận diện thực thể, xác định mối quan hệ và xây dựng đồ thị tri thức tự động — sử dụng mô hình NER **PhoBERT-large** (VinAI, tiếng Việt).
+Ứng dụng trích xuất thực thể (NER), xây dựng quan hệ và trực quan hóa đồ thị tri thức từ văn bản/PDF tiếng Việt.
 
-## Kiến trúc hệ thống
+Stack chính:
+- **Frontend**: React + Vite + TypeScript
+- **Backend**: FastAPI (Python)
+- **Mô hình NER**: PhoBERT (VinAI)
 
-```
-React Frontend (Vite)  ←→  FastAPI Backend (Python)  ←→  PhoBERT NER Model
-     port 3000                   port 8000                  model/model.bin
-```
+---
 
-## Cấu trúc dự án
+## 1) Tính năng chính
 
-```
-model/
-├── model.bin            # PhoBERT-large NER model (PyTorch, ~1.4 GB)
-└── meta.bin             # sklearn LabelEncoder (85 nhãn NER, BIO format)
-server/
-└── main.py              # FastAPI server — load model và serve API
-src/
-├── types.ts             # Interfaces dùng chung
-├── lib/
-│   └── ai.ts            # Gọi backend NER API (callExtract, callChat, ...)
-├── constants/
-│   └── graph.tsx        # Màu sắc, icon, hằng số đồ thị
-├── components/
-│   ├── TabButton.tsx
-│   ├── InputPanel.tsx
-│   └── views/
-│       ├── GraphView.tsx
-│       ├── EntitiesView.tsx
-│       ├── RelationsView.tsx
-│       ├── InsightView.tsx
-│       └── ChatbotView.tsx
-├── Dashboard.tsx        # Màn hình chính
-└── App.tsx              # Landing page
+- Trích xuất thực thể và quan hệ từ văn bản (`/extract`)
+- Upload PDF, tự bóc tách text (`/upload-pdf`)
+- Dự đoán liên kết mới giữa các node (`/predict-links`)
+- Tính graph metrics (degree, pagerank, betweenness, ...) (`/metrics`)
+- Tra cứu Knowledge Base cục bộ (`/kb/*`)
+- Dashboard trực quan: Graph, Entities, Relations, Insight, Chatbot, Metrics, Highlight
+
+---
+
+## 2) Kiến trúc hệ thống
+
+```text
+React Frontend (Vite, :3000)
+        ↕ HTTP
+FastAPI Backend (Python, :8000)
+        ↕
+PhoBERT NER + Knowledge Base + Metrics
 ```
 
-## Chạy locally
+---
 
-**Yêu cầu:** Node.js, Python 3.11+
+## 3) Cấu trúc thư mục
 
-### 1. Cài frontend dependencies
+```text
+.
+├─ src/                         # Frontend React
+│  ├─ components/views/         # Các màn hình Graph/Entities/Relations/...
+│  ├─ lib/ai.ts                 # API client gọi backend
+│  ├─ types.ts                  # Kiểu dữ liệu dùng chung
+│  └─ Dashboard.tsx
+├─ server/                      # Backend FastAPI
+│  ├─ main.py                   # Entry point API
+│  ├─ ner.py                    # Chạy NER
+│  ├─ graph.py                  # Build graph + predict links
+│  ├─ metrics.py                # Tính metrics đồ thị
+│  ├─ knowledge_base.py         # KB load/search
+│  └─ schemas.py                # Pydantic schemas
+├─ model/                       # Trọng số model + dữ liệu hỗ trợ
+├─ feature_engineering_output/  # Artifacts huấn luyện/đánh giá
+└─ README.md
+```
+
+---
+
+## 4) Yêu cầu môi trường
+
+- Node.js 18+ (khuyến nghị 20+)
+- Python 3.11+
+- Pip
+
+> Lưu ý: lần chạy đầu backend có thể mất thời gian do tải tokenizer/model.
+
+---
+
+## 5) Cài đặt
+
+### 5.1 Cài frontend dependencies
 
 ```bash
 npm install
 ```
 
-### 2. Cài Python backend dependencies
+### 5.2 Cài backend dependencies
 
 ```bash
 pip install torch --index-url https://download.pytorch.org/whl/cpu
-pip install fastapi uvicorn transformers scikit-learn joblib
+pip install fastapi uvicorn transformers scikit-learn joblib pypdf networkx
 ```
 
-### 3. Chạy backend server (Terminal 1)
+---
+
+## 6) Chạy dự án local
+
+Mở 2 terminal:
+
+### Terminal 1 - Backend
 
 ```bash
 npm run server
-# hoặc: python server/main.py
-# Server tại http://localhost:8000
-# Lần đầu sẽ tự tải PhoBERT tokenizer (~vài phút)
 ```
 
-### 4. Chạy frontend (Terminal 2)
+hoặc:
+
+```bash
+python server/main.py
+```
+
+Backend mặc định chạy ở `http://localhost:8000`.
+
+### Terminal 2 - Frontend
 
 ```bash
 npm run dev
-# App tại http://localhost:3000
 ```
 
-## API Backend
+Frontend chạy ở `http://localhost:3000`.
+
+---
+
+## 7) API backend
 
 | Endpoint | Method | Mô tả |
-|----------|--------|-------|
-| `/health` | GET | Kiểm tra model đã sẵn sàng chưa |
-| `/extract` | POST | Trích xuất entities và relations từ văn bản |
-| `/predict-links` | POST | Dự đoán liên kết mới giữa các entities |
+|---|---|---|
+| `/health` | GET | Trạng thái model và knowledge base |
+| `/extract` | POST | Trích xuất entities + relations từ text |
+| `/upload-pdf` | POST | Upload file PDF, trả text đã bóc tách |
+| `/predict-links` | POST | Dự đoán quan hệ mới |
+| `/metrics` | POST | Tính chỉ số đồ thị |
+| `/kb/stats` | GET | Thống kê knowledge base |
+| `/kb/search` | GET | Tìm kiếm entity trong KB |
+| `/kb/entity` | GET | Lấy triples theo entity |
 
-## Model NER
+### Ví dụ request `/extract`
 
-- **Kiến trúc**: PhoBERT-large (vocab 64001, hidden 1024, 24 layers)
-- **Tokenizer**: `vinai/phobert-large`
-- **Nhãn**: 85 nhãn BIO — PERSON, ORGANIZATION, LOCATION, PRODUCT, EVENT, DATETIME, QUANTITY, ADDRESS, EMAIL, URL, SKILL...
-- **Ngôn ngữ**: Tiếng Việt
+```json
+{
+  "text": "Vingroup đầu tư vào VinFast tại Hải Phòng.",
+  "use_deep_analysis": false
+}
+```
 
-## Tích hợp AI model khác
+---
 
-Để thêm LLM cho chat/insight, mở `src/lib/ai.ts` và implement:
+## 8) Scripts NPM
 
-| Hàm | Hiện tại | Có thể thêm |
-|-----|----------|-------------|
-| `callExtract` | PhoBERT NER (backend) | — |
-| `callPredictLinks` | Rule-based (backend) | — |
-| `callInsight` | Rule-based (local) | OpenAI, Gemini, Ollama... |
-| `callChat` | Rule-based (local) | OpenAI, Gemini, Ollama... |
+| Script | Mô tả |
+|---|---|
+| `npm run dev` | Chạy frontend Vite ở port 3000 |
+| `npm run server` | Chạy FastAPI backend (`python server/main.py`) |
+| `npm run build` | Build frontend production |
+| `npm run preview` | Preview bản build |
+| `npm run lint` | Type check (`tsc --noEmit`) |
+
+---
+
+## 9) Cấu hình môi trường
+
+File mẫu: `.env.example`
+
+```env
+API_KEY="YOUR_API_KEY_HERE"
+APP_URL="MY_APP_URL"
+```
+
+Hiện tại các chức năng cốt lõi hoạt động không bắt buộc API key. Biến môi trường dùng khi bạn mở rộng tích hợp LLM/provider ngoài.
+
+---
+
+## 10) Mở rộng tích hợp AI
+
+Điểm mở rộng chính nằm ở `src/lib/ai.ts`:
+
+- `callExtract`: gọi backend NER
+- `callPredictLinks`: gọi backend dự đoán quan hệ
+- `callMetrics`: gọi backend metrics
+- `callInsight`: hiện là rule-based local
+- `callChat`: hiện là rule-based local
+
+Bạn có thể thay `callInsight` và `callChat` bằng OpenAI/Gemini/Ollama tùy nhu cầu.
+
+---
+
+## 11) Lỗi thường gặp
+
+- **Không kết nối được server**
+  - Đảm bảo backend đang chạy ở `:8000` hoặc `:8001`
+  - Kiểm tra endpoint `GET /health`
+- **Model chưa sẵn sàng**
+  - Chờ thêm vài phút ở lần chạy đầu
+  - Xem log backend để kiểm tra lỗi tải model
+- **Upload PDF lỗi**
+  - Chỉ hỗ trợ `.pdf`
+  - PDF scan ảnh thuần có thể không trích xuất text được
+
+---
+
+## 12) Gợi ý cải thiện tiếp
+
+- Thêm Docker Compose cho frontend + backend
+- Bổ sung test API (`pytest`) và test frontend
+- Chuẩn hóa script đa nền tảng (Windows/Linux/macOS)

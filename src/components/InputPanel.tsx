@@ -140,7 +140,7 @@ export default function InputPanel({
             autosizeComposer();
           }}
           placeholder="Hỏi bất kỳ điều gì hoặc dán văn bản để trích xuất..."
-          className="flex-1 min-h-[28px] max-h-[180px] resize-none outline-none text-sm leading-6 bg-transparent placeholder:text-black/35 overflow-y-hidden"
+          className="flex-1 min-h-[28px] max-h-[180px] resize-none outline-none text-sm leading-6 bg-transparent placeholder:text-black/35 overflow-y-auto"
           rows={1}
         />
 

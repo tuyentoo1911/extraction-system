@@ -6,4 +6,15 @@ coverage/
 *.log
 .env*
 !.env.example
-model/
+
+__pycache__/
+*.pyc
+
+# Quy tắc cho model/ (không ignore toàn bộ thư mục để vẫn commit triples.json)
+model/**/*.safetensors
+model/**/*.bin
+model/knowledge_graph_output/*.png
+model/knowledge_graph_output/*.gexf
+model/knowledge_graph_output/*.graphml.xml
+model/knowledge_graph_output/*.html
+notebooks

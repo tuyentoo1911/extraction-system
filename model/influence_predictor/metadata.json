@@ -1,6 +1,6 @@
 {
-  "timestamp_utc": "2026-04-05T05:04:33.419598+00:00",
-  "data_dir": "D:\\KLTN3\\extraction-system\\feature_engineering_output",
+  "timestamp_utc": "2026-04-05T05:20:33.876648+00:00",
+  "data_dir": "D:\\KLTN4\\extraction-system\\feature_engineering_output",
   "feature_names": [
     "log_pagerank",
     "pr_per_degree",

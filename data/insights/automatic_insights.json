@@ -1,0 +1,1293 @@
+{
+  "inputs": {
+    "node_metrics": "data\\graph_metrics\\node_metrics.csv",
+    "summary": "data\\graph_metrics\\summary.json",
+    "feature_data": null,
+    "prediction_data": null,
+    "model_metadata": null
+  },
+  "graph": {
+    "overview": {
+      "nodes": 7288,
+      "edges_unique": 6226,
+      "density": 0.0001172335679812342,
+      "weakly_connected_components": 1895,
+      "strongly_connected_components": 6784,
+      "relation_types": 12,
+      "median_degree": 1.0,
+      "median_influence": 0.0025942630478539997,
+      "high_influence_nodes": 729,
+      "noise_like_nodes": 663,
+      "encoding_issue_nodes": 516
+    },
+    "top_influence": [
+      {
+        "node": "FPT",
+        "entity_type": "ORGANIZATION",
+        "total_degree": 91,
+        "pagerank": 0.0031114750343618,
+        "betweenness": 0.0016453159610906,
+        "relation_diversity": 8.0,
+        "influence_score": 0.7197846428948099
+      },
+      {
+        "node": "Viettel",
+        "entity_type": "ORGANIZATION",
+        "total_degree": 69,
+        "pagerank": 0.0026050955729406,
+        "betweenness": 0.001863479394278,
+        "relation_diversity": 7.0,
+        "influence_score": 0.6394218187990022
+      },
+      {
+        "node": "Apple",
+        "entity_type": "ORGANIZATION",
+        "total_degree": 73,
+        "pagerank": 0.0010286409354198,
+        "betweenness": 0.0015872143640286,
+        "relation_diversity": 9.0,
+        "influence_score": 0.4460903773658381
+      },
+      {
+        "node": "Bộ Công an",
+        "entity_type": "ORGANIZATION",
+        "total_degree": 28,
+        "pagerank": 0.0017494336130547,
+        "betweenness": 0.0014273180503198,
+        "relation_diversity": 3.0,
+        "influence_score": 0.4100557406346821
+      },
+      {
+        "node": "Google",
+        "entity_type": "ORGANIZATION",
+        "total_degree": 40,
+        "pagerank": 0.0013886616191271,
+        "betweenness": 0.0014008297549503,
+        "relation_diversity": 7.0,
+        "influence_score": 0.3856647485747789
+      },
+      {
+        "node": "UBND",
+        "entity_type": "ORGANIZATION",
+        "total_degree": 42,
+        "pagerank": 0.0019828821158211,
+        "betweenness": 0.0004081322685317,
+        "relation_diversity": 6.0,
+        "influence_score": 0.3557836858886119
+      },
+      {
+        "node": "Việt Nam",
+        "entity_type": "LOCATION",
+        "total_degree": 107,
+        "pagerank": 0.000663314119867,
+        "betweenness": 0.0007723789283465,
+        "relation_diversity": 5.0,
+        "influence_score": 0.355463272930417
+      },
+      {
+        "node": "Fed",
+        "entity_type": "ORGANIZATION",
+        "total_degree": 16,
+        "pagerank": 0.0007737764996006,
+        "betweenness": 7.474294548079415e-06,
+        "relation_diversity": 3.0,
+        "influence_score": 0.3150946248734266
+      },
+      {
+        "node": "Bộ Tài chính",
+        "entity_type": "ORGANIZATION",
+        "total_degree": 24,
+        "pagerank": 0.0014244825431685,
+        "betweenness": 0.0007708646217115,
+        "relation_diversity": 4.0,
+        "influence_score": 0.2921088615686268
+      },
+      {
+        "node": "Nvidia",
+        "entity_type": "ORGANIZATION",
+        "total_degree": 38,
+        "pagerank": 0.0005833363276365,
+        "betweenness": 0.0012660870037853,
+        "relation_diversity": 9.0,
+        "influence_score": 0.2815888070317653
+      }
+    ],
+    "top_pagerank": [
+      {
+        "node": "FPT",
+        "entity_type": "ORGANIZATION",
+        "total_degree": 91,
+        "pagerank": 0.0031114750343618,
+        "betweenness": 0.0016453159610906,
+        "relation_diversity": 8.0,
+        "influence_score": 0.7197846428948099
+      },
+      {
+        "node": "Viettel",
+        "entity_type": "ORGANIZATION",
+        "total_degree": 69,
+        "pagerank": 0.0026050955729406,
+        "betweenness": 0.001863479394278,
+        "relation_diversity": 7.0,
+        "influence_score": 0.6394218187990022
+      },
+      {
+        "node": "UBND",
+        "entity_type": "ORGANIZATION",
+        "total_degree": 42,
+        "pagerank": 0.0019828821158211,
+        "betweenness": 0.0004081322685317,
+        "relation_diversity": 6.0,
+        "influence_score": 0.3557836858886119
+      },
+      {
+        "node": "465.819 tỷ",
+        "entity_type": "MONEY",
+        "total_degree": 1,
+        "pagerank": 0.0019102415174285,
+        "betweenness": 0.0,
+        "relation_diversity": 1.0,
+        "influence_score": 0.2256878470571069
+      },
+      {
+        "node": "Bộ Công an",
+        "entity_type": "ORGANIZATION",
+        "total_degree": 28,
+        "pagerank": 0.0017494336130547,
+        "betweenness": 0.0014273180503198,
+        "relation_diversity": 3.0,
+        "influence_score": 0.4100557406346821
+      },
+      {
+        "node": "Cục An toàn thông tin",
+        "entity_type": "ORGANIZATION",
+        "total_degree": 18,
+        "pagerank": 0.001621161582322,
+        "betweenness": 0.0004333575380232,
+        "relation_diversity": 1.0,
+        "influence_score": 0.2688507024255798
+      },
+      {
+        "node": "Mỹ",
+        "entity_type": "LOCATION",
+        "total_degree": 37,
+        "pagerank": 0.0014273120928418,
+        "betweenness": 0.0002336090977752,
+        "relation_diversity": 5.0,
+        "influence_score": 0.2596353998823887
+      },
+      {
+        "node": "Bộ Tài chính",
+        "entity_type": "ORGANIZATION",
+        "total_degree": 24,
+        "pagerank": 0.0014244825431685,
+        "betweenness": 0.0007708646217115,
+        "relation_diversity": 4.0,
+        "influence_score": 0.2921088615686268
+      },
+      {
+        "node": "Google",
+        "entity_type": "ORGANIZATION",
+        "total_degree": 40,
+        "pagerank": 0.0013886616191271,
+        "betweenness": 0.0014008297549503,
+        "relation_diversity": 7.0,
+        "influence_score": 0.3856647485747789
+      },
+      {
+        "node": "Bộ Công Thương",
+        "entity_type": "ORGANIZATION",
+        "total_degree": 16,
+        "pagerank": 0.0012255883657007,
+        "betweenness": 0.000287882811442,
+        "relation_diversity": 3.0,
+        "influence_score": 0.2007284316984753
+      }
+    ],
+    "top_brokers": [
+      {
+        "node": "Apple",
+        "entity_type": "ORGANIZATION",
+        "total_degree": 73,
+        "pagerank": 0.0010286409354198,
+        "betweenness": 0.0015872143640286,
+        "relation_diversity": 9.0,
+        "influence_score": 0.4460903773658381,
+        "betweenness_x_diversity": 0.0142849292762574
+      },
+      {
+        "node": "FPT",
+        "entity_type": "ORGANIZATION",
+        "total_degree": 91,
+        "pagerank": 0.0031114750343618,
+        "betweenness": 0.0016453159610906,
+        "relation_diversity": 8.0,
+        "influence_score": 0.7197846428948099,
+        "betweenness_x_diversity": 0.0131625276887248
+      },
+      {
+        "node": "Viettel",
+        "entity_type": "ORGANIZATION",
+        "total_degree": 69,
+        "pagerank": 0.0026050955729406,
+        "betweenness": 0.001863479394278,
+        "relation_diversity": 7.0,
+        "influence_score": 0.6394218187990022,
+        "betweenness_x_diversity": 0.013044355759945999
+      },
+      {
+        "node": "Nvidia",
+        "entity_type": "ORGANIZATION",
+        "total_degree": 38,
+        "pagerank": 0.0005833363276365,
+        "betweenness": 0.0012660870037853,
+        "relation_diversity": 9.0,
+        "influence_score": 0.2815888070317653,
+        "betweenness_x_diversity": 0.011394783034067699
+      },
+      {
+        "node": "Google",
+        "entity_type": "ORGANIZATION",
+        "total_degree": 40,
+        "pagerank": 0.0013886616191271,
+        "betweenness": 0.0014008297549503,
+        "relation_diversity": 7.0,
+        "influence_score": 0.3856647485747789,
+        "betweenness_x_diversity": 0.0098058082846521
+      },
+      {
+        "node": "Samsung",
+        "entity_type": "ORGANIZATION",
+        "total_degree": 31,
+        "pagerank": 0.000462596471117,
+        "betweenness": 0.0013050979152975,
+        "relation_diversity": 7.0,
+        "influence_score": 0.2451823608423442,
+        "betweenness_x_diversity": 0.0091356854070825
+      },
+      {
+        "node": "CMC",
+        "entity_type": "ORGANIZATION",
+        "total_degree": 28,
+        "pagerank": 0.0008142400870181,
+        "betweenness": 0.0011548215139089,
+        "relation_diversity": 6.0,
+        "influence_score": 0.2660415593144506,
+        "betweenness_x_diversity": 0.006928929083453399
+      },
+      {
+        "node": "VPBank",
+        "entity_type": "ORGANIZATION",
+        "total_degree": 39,
+        "pagerank": 0.000837388965518,
+        "betweenness": 0.0008938761192133,
+        "relation_diversity": 7.0,
+        "influence_score": 0.2614453039961698,
+        "betweenness_x_diversity": 0.0062571328344931
+      },
+      {
+        "node": "Bộ Công an",
+        "entity_type": "ORGANIZATION",
+        "total_degree": 28,
+        "pagerank": 0.0017494336130547,
+        "betweenness": 0.0014273180503198,
+        "relation_diversity": 3.0,
+        "influence_score": 0.4100557406346821,
+        "betweenness_x_diversity": 0.0042819541509594005
+      },
+      {
+        "node": "Việt Nam",
+        "entity_type": "LOCATION",
+        "total_degree": 107,
+        "pagerank": 0.000663314119867,
+        "betweenness": 0.0007723789283465,
+        "relation_diversity": 5.0,
+        "influence_score": 0.355463272930417,
+        "betweenness_x_diversity": 0.0038618946417325003
+      }
+    ],
+    "top_broadcasters": [
+      {
+        "node": "Việt Nam",
+        "entity_type": "LOCATION",
+        "in_degree": 14,
+        "out_degree": 93,
+        "degree_gap": 79,
+        "flow_pattern": "broadcaster",
+        "influence_score": 0.355463272930417
+      },
+      {
+        "node": "Vietlott",
+        "entity_type": "ORGANIZATION",
+        "in_degree": 0,
+        "out_degree": 52,
+        "degree_gap": 52,
+        "flow_pattern": "broadcaster",
+        "influence_score": 0.0962264150943396
+      },
+      {
+        "node": "Trung Quốc",
+        "entity_type": "LOCATION",
+        "in_degree": 5,
+        "out_degree": 46,
+        "degree_gap": 41,
+        "flow_pattern": "broadcaster",
+        "influence_score": 0.1557442163801887
+      },
+      {
+        "node": "Nguyễn Văn",
+        "entity_type": "PERSON",
+        "in_degree": 0,
+        "out_degree": 27,
+        "degree_gap": 27,
+        "flow_pattern": "broadcaster",
+        "influence_score": 0.0490566037735849
+      },
+      {
+        "node": "Huawei",
+        "entity_type": "ORGANIZATION",
+        "in_degree": 6,
+        "out_degree": 24,
+        "degree_gap": 18,
+        "flow_pattern": "broadcaster",
+        "influence_score": 0.1130511640116875
+      },
+      {
+        "node": "Nhật Bản",
+        "entity_type": "LOCATION",
+        "in_degree": 2,
+        "out_degree": 17,
+        "degree_gap": 15,
+        "flow_pattern": "broadcaster",
+        "influence_score": 0.0693777397753087
+      },
+      {
+        "node": "Vũ Ngọc",
+        "entity_type": "PERSON",
+        "in_degree": 0,
+        "out_degree": 15,
+        "degree_gap": 15,
+        "flow_pattern": "broadcaster",
+        "influence_score": 0.0264150943396226
+      },
+      {
+        "node": "TPHCM",
+        "entity_type": "LOCATION",
+        "in_degree": 1,
+        "out_degree": 15,
+        "degree_gap": 14,
+        "flow_pattern": "broadcaster",
+        "influence_score": 0.0361149980622843
+      },
+      {
+        "node": "Nguyễn Thị",
+        "entity_type": "PERSON",
+        "in_degree": 0,
+        "out_degree": 14,
+        "degree_gap": 14,
+        "flow_pattern": "broadcaster",
+        "influence_score": 0.0245283018867924
+      },
+      {
+        "node": "Comex New York",
+        "entity_type": "UNKNOWN",
+        "in_degree": 0,
+        "out_degree": 14,
+        "degree_gap": 14,
+        "flow_pattern": "broadcaster",
+        "influence_score": 0.0245283018867924
+      }
+    ],
+    "top_collectors": [
+      {
+        "node": "Fed",
+        "entity_type": "ORGANIZATION",
+        "in_degree": 14,
+        "out_degree": 2,
+        "degree_gap": -12,
+        "flow_pattern": "collector",
+        "influence_score": 0.3150946248734266
+      },
+      {
+        "node": "xây dựng",
+        "entity_type": "INDUSTRY",
+        "in_degree": 11,
+        "out_degree": 0,
+        "degree_gap": -11,
+        "flow_pattern": "collector",
+        "influence_score": 0.1056492401156389
+      },
+      {
+        "node": "Hội nghị tổng kết",
+        "entity_type": "EVENT",
+        "in_degree": 9,
+        "out_degree": 0,
+        "degree_gap": -9,
+        "flow_pattern": "collector",
+        "influence_score": 0.1207199253352256
+      },
+      {
+        "node": "năng lượng",
+        "entity_type": "INDUSTRY",
+        "in_degree": 9,
+        "out_degree": 0,
+        "degree_gap": -9,
+        "flow_pattern": "collector",
+        "influence_score": 0.0958943996977632
+      },
+      {
+        "node": "3.000 USD",
+        "entity_type": "UNKNOWN",
+        "in_degree": 9,
+        "out_degree": 0,
+        "degree_gap": -9,
+        "flow_pattern": "collector",
+        "influence_score": 0.0784709020399816
+      },
+      {
+        "node": "tài chính",
+        "entity_type": "INDUSTRY",
+        "in_degree": 9,
+        "out_degree": 0,
+        "degree_gap": -9,
+        "flow_pattern": "collector",
+        "influence_score": 0.0653234473304281
+      },
+      {
+        "node": "đạt 100%",
+        "entity_type": "PERCENT",
+        "in_degree": 8,
+        "out_degree": 0,
+        "degree_gap": -8,
+        "flow_pattern": "collector",
+        "influence_score": 0.1188768463883127
+      },
+      {
+        "node": "1 tỷ USD",
+        "entity_type": "MONEY",
+        "in_degree": 8,
+        "out_degree": 0,
+        "degree_gap": -8,
+        "flow_pattern": "collector",
+        "influence_score": 0.0743822420187523
+      },
+      {
+        "node": "bảo hiểm",
+        "entity_type": "INDUSTRY",
+        "in_degree": 9,
+        "out_degree": 2,
+        "degree_gap": -7,
+        "flow_pattern": "collector",
+        "influence_score": 0.1034174702243983
+      },
+      {
+        "node": "5.000 USD",
+        "entity_type": "UNKNOWN",
+        "in_degree": 7,
+        "out_degree": 0,
+        "degree_gap": -7,
+        "flow_pattern": "collector",
+        "influence_score": 0.0658002791756944
+      }
+    ],
+    "high_confidence_low_connectivity": [
+      {
+        "node": "Ngô Bình Nguyên",
+        "entity_type": "PERSON",
+        "total_degree": 1,
+        "avg_edge_confidence": 0.8500000238418579,
+        "max_edge_confidence": 0.8500000238418579,
+        "total_edge_frequency": 1.0
+      },
+      {
+        "node": "Đỗ Nguyệt Ánh",
+        "entity_type": "PERSON",
+        "total_degree": 1,
+        "avg_edge_confidence": 0.8500000238418579,
+        "max_edge_confidence": 0.8500000238418579,
+        "total_edge_frequency": 1.0
+      },
+      {
+        "node": "Nguyễn Hoàng Hải",
+        "entity_type": "PERSON",
+        "total_degree": 1,
+        "avg_edge_confidence": 0.8500000238418579,
+        "max_edge_confidence": 0.8500000238418579,
+        "total_edge_frequency": 1.0
+      },
+      {
+        "node": "Trương Sơn Lâm",
+        "entity_type": "PERSON",
+        "total_degree": 1,
+        "avg_edge_confidence": 0.8500000238418579,
+        "max_edge_confidence": 0.8500000238418579,
+        "total_edge_frequency": 1.0
+      },
+      {
+        "node": "Trương Thu Hoà",
+        "entity_type": "PERSON",
+        "total_degree": 1,
+        "avg_edge_confidence": 0.8500000238418579,
+        "max_edge_confidence": 0.8500000238418579,
+        "total_edge_frequency": 1.0
+      },
+      {
+        "node": "Nguyễn Thị Mai Thanh",
+        "entity_type": "PERSON",
+        "total_degree": 1,
+        "avg_edge_confidence": 0.8500000238418579,
+        "max_edge_confidence": 0.8500000238418579,
+        "total_edge_frequency": 1.0
+      },
+      {
+        "node": "Trần Hùng Huy",
+        "entity_type": "PERSON",
+        "total_degree": 1,
+        "avg_edge_confidence": 0.8500000238418579,
+        "max_edge_confidence": 0.8500000238418579,
+        "total_edge_frequency": 2.0
+      },
+      {
+        "node": "Gates",
+        "entity_type": "PERSON",
+        "total_degree": 1,
+        "avg_edge_confidence": 0.8500000238418579,
+        "max_edge_confidence": 0.8500000238418579,
+        "total_edge_frequency": 1.0
+      }
+    ],
+    "top_by_entity_type": {
+      "DATE": [
+        {
+          "node": "tháng",
+          "entity_type": "DATE",
+          "total_degree": 12,
+          "pagerank": 7.422642943547452e-05,
+          "betweenness": 0.0,
+          "relation_diversity": 2.0,
+          "influence_score": 0.020754716981132
+        },
+        {
+          "node": "quý III",
+          "entity_type": "DATE",
+          "total_degree": 7,
+          "pagerank": 7.422642943547452e-05,
+          "betweenness": 0.0,
+          "relation_diversity": 2.0,
+          "influence_score": 0.0113207547169811
+        },
+        {
+          "node": "quý I",
+          "entity_type": "DATE",
+          "total_degree": 5,
+          "pagerank": 7.422642943547452e-05,
+          "betweenness": 0.0,
+          "relation_diversity": 2.0,
+          "influence_score": 0.0075471698113207
+        },
+        {
+          "node": "tháng 11",
+          "entity_type": "DATE",
+          "total_degree": 3,
+          "pagerank": 7.422642943547452e-05,
+          "betweenness": 0.0,
+          "relation_diversity": 1.0,
+          "influence_score": 0.0037735849056603
+        },
+        {
+          "node": "tháng 1",
+          "entity_type": "DATE",
+          "total_degree": 3,
+          "pagerank": 7.422642943547452e-05,
+          "betweenness": 0.0,
+          "relation_diversity": 1.0,
+          "influence_score": 0.0037735849056603
+        }
+      ],
+      "EVENT": [
+        {
+          "node": "Hội nghị tổng kết",
+          "entity_type": "EVENT",
+          "total_degree": 9,
+          "pagerank": 0.0009334983683811,
+          "betweenness": 0.0,
+          "relation_diversity": 1.0,
+          "influence_score": 0.1207199253352256
+        },
+        {
+          "node": "Hội nghị sơ kết",
+          "entity_type": "EVENT",
+          "total_degree": 4,
+          "pagerank": 0.0003636235462672,
+          "betweenness": 0.0,
+          "relation_diversity": 1.0,
+          "influence_score": 0.0412338520481904
+        },
+        {
+          "node": "Online Friday",
+          "entity_type": "EVENT",
+          "total_degree": 1,
+          "pagerank": 0.0001881721113453,
+          "betweenness": 0.0,
+          "relation_diversity": 1.0,
+          "influence_score": 0.0140066504342641
+        },
+        {
+          "node": "Hội nghị quốc gia lần thứ XXVIII",
+          "entity_type": "EVENT",
+          "total_degree": 1,
+          "pagerank": 0.0001655096014386,
+          "betweenness": 0.0,
+          "relation_diversity": 1.0,
+          "influence_score": 0.0112209859952267
+        },
+        {
+          "node": "Ngày Chuyển đổi số quốc gia",
+          "entity_type": "EVENT",
+          "total_degree": 1,
+          "pagerank": 0.0001591925329699,
+          "betweenness": 0.0,
+          "relation_diversity": 1.0,
+          "influence_score": 0.0104442615801607
+        }
+      ],
+      "INDUSTRY": [
+        {
+          "node": "bất động sản",
+          "entity_type": "INDUSTRY",
+          "total_degree": 19,
+          "pagerank": 0.0009082061778072,
+          "betweenness": 5.422552037947241e-05,
+          "relation_diversity": 2.0,
+          "influence_score": 0.1422997443120711
+        },
+        {
+          "node": "xây dựng",
+          "entity_type": "INDUSTRY",
+          "total_degree": 11,
+          "pagerank": 0.0007801581771279,
+          "betweenness": 0.0,
+          "relation_diversity": 1.0,
+          "influence_score": 0.1056492401156389
+        },
+        {
+          "node": "bảo hiểm",
+          "entity_type": "INDUSTRY",
+          "total_degree": 11,
+          "pagerank": 0.0007464336678274,
+          "betweenness": 1.7780094212650904e-05,
+          "relation_diversity": 2.0,
+          "influence_score": 0.1034174702243983
+        },
+        {
+          "node": "năng lượng",
+          "entity_type": "INDUSTRY",
+          "total_degree": 9,
+          "pagerank": 0.0007313277669674,
+          "betweenness": 0.0,
+          "relation_diversity": 1.0,
+          "influence_score": 0.0958943996977632
+        },
+        {
+          "node": "giáo dục",
+          "entity_type": "INDUSTRY",
+          "total_degree": 6,
+          "pagerank": 0.0006535865682323,
+          "betweenness": 0.0,
+          "relation_diversity": 1.0,
+          "influence_score": 0.0806504791452291
+        }
+      ],
+      "LOCATION": [
+        {
+          "node": "Việt Nam",
+          "entity_type": "LOCATION",
+          "total_degree": 107,
+          "pagerank": 0.000663314119867,
+          "betweenness": 0.0007723789283465,
+          "relation_diversity": 5.0,
+          "influence_score": 0.355463272930417
+        },
+        {
+          "node": "Mỹ",
+          "entity_type": "LOCATION",
+          "total_degree": 37,
+          "pagerank": 0.0014273120928418,
+          "betweenness": 0.0002336090977752,
+          "relation_diversity": 5.0,
+          "influence_score": 0.2596353998823887
+        },
+        {
+          "node": "Trung Quốc",
+          "entity_type": "LOCATION",
+          "total_degree": 51,
+          "pagerank": 0.0002523407685512,
+          "betweenness": 0.0003631198128599,
+          "relation_diversity": 4.0,
+          "influence_score": 0.1557442163801887
+        },
+        {
+          "node": "Nhật Bản",
+          "entity_type": "LOCATION",
+          "total_degree": 19,
+          "pagerank": 0.0002447215306676,
+          "betweenness": 0.0001346000846839,
+          "relation_diversity": 3.0,
+          "influence_score": 0.0693777397753087
+        },
+        {
+          "node": "Hà Nội",
+          "entity_type": "LOCATION",
+          "total_degree": 6,
+          "pagerank": 0.000376973340885,
+          "betweenness": 2.260181467709861e-07,
+          "relation_diversity": 2.0,
+          "influence_score": 0.0466726737024214
+        }
+      ],
+      "MONEY": [
+        {
+          "node": "465.819 tỷ",
+          "entity_type": "MONEY",
+          "total_degree": 1,
+          "pagerank": 0.0019102415174285,
+          "betweenness": 0.0,
+          "relation_diversity": 1.0,
+          "influence_score": 0.2256878470571069
+        },
+        {
+          "node": "21,5 triệu",
+          "entity_type": "MONEY",
+          "total_degree": 1,
+          "pagerank": 0.000822158030337,
+          "betweenness": 0.0,
+          "relation_diversity": 1.0,
+          "influence_score": 0.0919377372535411
+        },
+        {
+          "node": "1 tỷ USD",
+          "entity_type": "MONEY",
+          "total_degree": 8,
+          "pagerank": 0.0005717987583076,
+          "betweenness": 0.0,
+          "relation_diversity": 1.0,
+          "influence_score": 0.0743822420187523
+        },
+        {
+          "node": "1.000 tỷ USD",
+          "entity_type": "MONEY",
+          "total_degree": 3,
+          "pagerank": 0.0003831898216775,
+          "betweenness": 0.0,
+          "relation_diversity": 1.0,
+          "influence_score": 0.0417521850116885
+        },
+        {
+          "node": "3,7 triệu USD",
+          "entity_type": "MONEY",
+          "total_degree": 1,
+          "pagerank": 0.0004063834087369,
+          "betweenness": 0.0,
+          "relation_diversity": 1.0,
+          "influence_score": 0.040829617378298
+        }
+      ],
+      "ORGANIZATION": [
+        {
+          "node": "FPT",
+          "entity_type": "ORGANIZATION",
+          "total_degree": 91,
+          "pagerank": 0.0031114750343618,
+          "betweenness": 0.0016453159610906,
+          "relation_diversity": 8.0,
+          "influence_score": 0.7197846428948099
+        },
+        {
+          "node": "Viettel",
+          "entity_type": "ORGANIZATION",
+          "total_degree": 69,
+          "pagerank": 0.0026050955729406,
+          "betweenness": 0.001863479394278,
+          "relation_diversity": 7.0,
+          "influence_score": 0.6394218187990022
+        },
+        {
+          "node": "Apple",
+          "entity_type": "ORGANIZATION",
+          "total_degree": 73,
+          "pagerank": 0.0010286409354198,
+          "betweenness": 0.0015872143640286,
+          "relation_diversity": 9.0,
+          "influence_score": 0.4460903773658381
+        },
+        {
+          "node": "Bộ Công an",
+          "entity_type": "ORGANIZATION",
+          "total_degree": 28,
+          "pagerank": 0.0017494336130547,
+          "betweenness": 0.0014273180503198,
+          "relation_diversity": 3.0,
+          "influence_score": 0.4100557406346821
+        },
+        {
+          "node": "Google",
+          "entity_type": "ORGANIZATION",
+          "total_degree": 40,
+          "pagerank": 0.0013886616191271,
+          "betweenness": 0.0014008297549503,
+          "relation_diversity": 7.0,
+          "influence_score": 0.3856647485747789
+        }
+      ],
+      "PERCENT": [
+        {
+          "node": "đạt 100%",
+          "entity_type": "PERCENT",
+          "total_degree": 8,
+          "pagerank": 0.0009311488928309,
+          "betweenness": 0.0,
+          "relation_diversity": 2.0,
+          "influence_score": 0.1188768463883127
+        },
+        {
+          "node": "tăng 8,80%",
+          "entity_type": "PERCENT",
+          "total_degree": 1,
+          "pagerank": 0.0007722959117221,
+          "betweenness": 0.0,
+          "relation_diversity": 1.0,
+          "influence_score": 0.0858085533086607
+        },
+        {
+          "node": "tăng 13,5%",
+          "entity_type": "PERCENT",
+          "total_degree": 1,
+          "pagerank": 0.0007722959117221,
+          "betweenness": 0.0,
+          "relation_diversity": 1.0,
+          "influence_score": 0.0858085533086607
+        },
+        {
+          "node": "tăng 15,69%",
+          "entity_type": "PERCENT",
+          "total_degree": 1,
+          "pagerank": 0.0007722959117221,
+          "betweenness": 0.0,
+          "relation_diversity": 1.0,
+          "influence_score": 0.0858085533086607
+        },
+        {
+          "node": "tăng 530%",
+          "entity_type": "PERCENT",
+          "total_degree": 1,
+          "pagerank": 0.0004027797122201,
+          "betweenness": 0.0,
+          "relation_diversity": 1.0,
+          "influence_score": 0.0403866414389184
+        }
+      ],
+      "PERSON": [
+        {
+          "node": "Nguyễn Văn",
+          "entity_type": "PERSON",
+          "total_degree": 27,
+          "pagerank": 7.422642943547452e-05,
+          "betweenness": 0.0,
+          "relation_diversity": 1.0,
+          "influence_score": 0.0490566037735849
+        },
+        {
+          "node": "Hải",
+          "entity_type": "PERSON",
+          "total_degree": 4,
+          "pagerank": 0.000101328488337,
+          "betweenness": 0.0002246385840231,
+          "relation_diversity": 3.0,
+          "influence_score": 0.0331014518117787
+        },
+        {
+          "node": "Vũ Ngọc",
+          "entity_type": "PERSON",
+          "total_degree": 15,
+          "pagerank": 7.422642943547452e-05,
+          "betweenness": 0.0,
+          "relation_diversity": 1.0,
+          "influence_score": 0.0264150943396226
+        },
+        {
+          "node": "Đức",
+          "entity_type": "PERSON",
+          "total_degree": 10,
+          "pagerank": 0.0001375409525681,
+          "betweenness": 2.260181467709861e-07,
+          "relation_diversity": 3.0,
+          "influence_score": 0.0247881789330144
+        },
+        {
+          "node": "Nguyễn Thị",
+          "entity_type": "PERSON",
+          "total_degree": 14,
+          "pagerank": 7.422642943547452e-05,
+          "betweenness": 0.0,
+          "relation_diversity": 1.0,
+          "influence_score": 0.0245283018867924
+        }
+      ],
+      "PRODUCT": [
+        {
+          "node": "Gemini",
+          "entity_type": "PRODUCT",
+          "total_degree": 3,
+          "pagerank": 0.0003434479928351,
+          "betweenness": 1.668767316992447e-05,
+          "relation_diversity": 3.0,
+          "influence_score": 0.0393350351460918
+        },
+        {
+          "node": "ChatGPT",
+          "entity_type": "PRODUCT",
+          "total_degree": 5,
+          "pagerank": 0.0002469976611401,
+          "betweenness": 2.503150975488671e-05,
+          "relation_diversity": 3.0,
+          "influence_score": 0.032069416781559
+        },
+        {
+          "node": "MacBook",
+          "entity_type": "PRODUCT",
+          "total_degree": 3,
+          "pagerank": 0.0002463318571368,
+          "betweenness": 0.0,
+          "relation_diversity": 1.0,
+          "influence_score": 0.0251320778501004
+        },
+        {
+          "node": "Apple Intelligence",
+          "entity_type": "PRODUCT",
+          "total_degree": 2,
+          "pagerank": 0.0002065524568634,
+          "betweenness": 0.0,
+          "relation_diversity": 1.0,
+          "influence_score": 0.0185984313980614
+        },
+        {
+          "node": "Galaxy S26",
+          "entity_type": "PRODUCT",
+          "total_degree": 1,
+          "pagerank": 0.0001949998921335,
+          "betweenness": 0.0,
+          "relation_diversity": 1.0,
+          "influence_score": 0.0172817954972264
+        }
+      ],
+      "UNKNOWN": [
+        {
+          "node": "Sacombank",
+          "entity_type": "UNKNOWN",
+          "total_degree": 21,
+          "pagerank": 0.0006438720484181,
+          "betweenness": 0.0003403386635461,
+          "relation_diversity": 5.0,
+          "influence_score": 0.1442855553351023
+        },
+        {
+          "node": "Agribank",
+          "entity_type": "UNKNOWN",
+          "total_degree": 23,
+          "pagerank": 0.0007883373350921,
+          "betweenness": 5.612783978146155e-06,
+          "relation_diversity": 5.0,
+          "influence_score": 0.1298937051075417
+        },
+        {
+          "node": "3.000 USD",
+          "entity_type": "UNKNOWN",
+          "total_degree": 9,
+          "pagerank": 0.0005894880722517,
+          "betweenness": 0.0,
+          "relation_diversity": 1.0,
+          "influence_score": 0.0784709020399816
+        },
+        {
+          "node": "5.000 USD",
+          "entity_type": "UNKNOWN",
+          "total_degree": 7,
+          "pagerank": 0.0005174280913644,
+          "betweenness": 0.0,
+          "relation_diversity": 1.0,
+          "influence_score": 0.0658002791756944
+        },
+        {
+          "node": "10 triệu",
+          "entity_type": "UNKNOWN",
+          "total_degree": 6,
+          "pagerank": 0.0004029463117839,
+          "betweenness": 0.0,
+          "relation_diversity": 1.0,
+          "influence_score": 0.0498410831459261
+        }
+      ]
+    },
+    "entity_type_summary": [
+      {
+        "entity_type": "INDUSTRY",
+        "node_count": 56,
+        "median_degree": 3.0,
+        "mean_influence": 0.04648802640586395,
+        "high_influence_nodes": 28,
+        "noise_like_nodes": 7
+      },
+      {
+        "entity_type": "ORGANIZATION",
+        "node_count": 2411,
+        "median_degree": 1.0,
+        "mean_influence": 0.01867958916480024,
+        "high_influence_nodes": 533,
+        "noise_like_nodes": 2
+      },
+      {
+        "entity_type": "LOCATION",
+        "node_count": 133,
+        "median_degree": 1.0,
+        "mean_influence": 0.011485953817275301,
+        "high_influence_nodes": 11,
+        "noise_like_nodes": 0
+      },
+      {
+        "entity_type": "DATE",
+        "node_count": 30,
+        "median_degree": 2.0,
+        "mean_influence": 0.008796812940517464,
+        "high_influence_nodes": 3,
+        "noise_like_nodes": 9
+      },
+      {
+        "entity_type": "EVENT",
+        "node_count": 35,
+        "median_degree": 1.0,
+        "mean_influence": 0.008580254823286006,
+        "high_influence_nodes": 2,
+        "noise_like_nodes": 0
+      },
+      {
+        "entity_type": "PERCENT",
+        "node_count": 243,
+        "median_degree": 1.0,
+        "mean_influence": 0.008269478516146865,
+        "high_influence_nodes": 16,
+        "noise_like_nodes": 18
+      },
+      {
+        "entity_type": "PRODUCT",
+        "node_count": 38,
+        "median_degree": 1.0,
+        "mean_influence": 0.006562405611135777,
+        "high_influence_nodes": 3,
+        "noise_like_nodes": 0
+      },
+      {
+        "entity_type": "MONEY",
+        "node_count": 640,
+        "median_degree": 1.0,
+        "mean_influence": 0.006236966862420872,
+        "high_influence_nodes": 22,
+        "noise_like_nodes": 0
+      },
+      {
+        "entity_type": "UNKNOWN",
+        "node_count": 2403,
+        "median_degree": 1.0,
+        "mean_influence": 0.0052461711011836795,
+        "high_influence_nodes": 106,
+        "noise_like_nodes": 627
+      },
+      {
+        "entity_type": "PERSON",
+        "node_count": 1299,
+        "median_degree": 1.0,
+        "mean_influence": 0.0009049980463039528,
+        "high_influence_nodes": 5,
+        "noise_like_nodes": 0
+      }
+    ],
+    "quality": {
+      "noise_ratio": 0.09097145993413831,
+      "encoding_issue_ratio": 0.070801317233809,
+      "noise_candidates": [
+        {
+          "node": "công nghiệp",
+          "entity_type": "INDUSTRY",
+          "total_degree": 57,
+          "influence_score": 0.5103130388995032,
+          "flow_pattern": "collector",
+          "analysis_quality": "review"
+        },
+        {
+          "node": "công nghệ",
+          "entity_type": "INDUSTRY",
+          "total_degree": 33,
+          "influence_score": 0.3172166892447396,
+          "flow_pattern": "collector",
+          "analysis_quality": "review"
+        },
+        {
+          "node": "100%",
+          "entity_type": "UNKNOWN",
+          "total_degree": 23,
+          "influence_score": 0.226610523702906,
+          "flow_pattern": "collector",
+          "analysis_quality": "review"
+        },
+        {
+          "node": "10%",
+          "entity_type": "UNKNOWN",
+          "total_degree": 20,
+          "influence_score": 0.1858718675632451,
+          "flow_pattern": "collector",
+          "analysis_quality": "review"
+        },
+        {
+          "node": "20%",
+          "entity_type": "UNKNOWN",
+          "total_degree": 18,
+          "influence_score": 0.1785882835402407,
+          "flow_pattern": "collector",
+          "analysis_quality": "review"
+        },
+        {
+          "node": "8%",
+          "entity_type": "UNKNOWN",
+          "total_degree": 20,
+          "influence_score": 0.1612446230524815,
+          "flow_pattern": "collector",
+          "analysis_quality": "review"
+        },
+        {
+          "node": "công",
+          "entity_type": "INDUSTRY",
+          "total_degree": 14,
+          "influence_score": 0.1280549690568251,
+          "flow_pattern": "collector",
+          "analysis_quality": "review"
+        },
+        {
+          "node": "Tập đoàn",
+          "entity_type": "ORGANIZATION",
+          "total_degree": 19,
+          "influence_score": 0.1246175307919313,
+          "flow_pattern": "collector",
+          "analysis_quality": "review"
+        }
+      ],
+      "encoding_candidates": [
+        {
+          "node": "Ngân hàng Nhà nước",
+          "entity_type": "ORGANIZATION",
+          "total_degree": 17,
+          "influence_score": 0.175769440786407,
+          "analysis_quality": "encoding_review"
+        },
+        {
+          "node": "xây dựng",
+          "entity_type": "INDUSTRY",
+          "total_degree": 11,
+          "influence_score": 0.1056492401156389,
+          "analysis_quality": "encoding_review"
+        },
+        {
+          "node": "Trung tâm Đổi mới sáng tạo Quốc gia",
+          "entity_type": "ORGANIZATION",
+          "total_degree": 7,
+          "influence_score": 0.1037316342402955,
+          "analysis_quality": "encoding_review"
+        },
+        {
+          "node": "ngân hàng",
+          "entity_type": "INDUSTRY",
+          "total_degree": 10,
+          "influence_score": 0.0960621839746461,
+          "analysis_quality": "encoding_review"
+        },
+        {
+          "node": "Liên đoàn Điền kinh Châu",
+          "entity_type": "ORGANIZATION",
+          "total_degree": 4,
+          "influence_score": 0.0770391285760383,
+          "analysis_quality": "encoding_review"
+        },
+        {
+          "node": "Hiệp hội Ngân hàng Việt Nam",
+          "entity_type": "ORGANIZATION",
+          "total_degree": 4,
+          "influence_score": 0.0770391285760383,
+          "analysis_quality": "encoding_review"
+        },
+        {
+          "node": "Hội Doanh nhân trẻ Việt Nam",
+          "entity_type": "ORGANIZATION",
+          "total_degree": 3,
+          "influence_score": 0.0751503146524452,
+          "analysis_quality": "encoding_review"
+        },
+        {
+          "node": "Trung tâm Bảo tồn Di tích Cố đô Huế",
+          "entity_type": "ORGANIZATION",
+          "total_degree": 5,
+          "influence_score": 0.0737247941854481,
+          "analysis_quality": "encoding_review"
+        }
+      ]
+    }
+  },
+  "ml": {
+    "available": false,
+    "summary": [],
+    "class_distribution": {},
+    "top_high_label_candidates": [],
+    "disagreement_candidates": []
+  },
+  "narrative": [
+    "Đồ thị rất thưa; median degree chỉ khoảng 1, nên phần lớn thực thể mới chỉ có một số kết nối rất hạn chế.",
+    "Mạng đang phân mảnh mạnh với nhiều weakly connected components, vì vậy insight hiện nghiêng về centrality cục bộ hơn là cấu trúc cụm lớn.",
+    "Nhóm ảnh hưởng cao nhất hiện tại tập trung ở FPT, Viettel, Apple; đây là các node nên ưu tiên đưa lên dashboard hoặc báo cáo điều hành.",
+    "Các broker nổi bật như Apple, FPT, Viettel có vai trò nối nhiều kiểu quan hệ, phù hợp để xem như hub trung gian trong mạng.",
+    "Tỷ lệ node nghi nhiễu khoảng 9.1%; cần cảnh báo khi dùng các bảng top list vì node generic có thể chen vào insight.",
+    "Phát hiện 516 node có dấu hiệu lỗi encoding; nên sửa upstream trước khi trình bày chính thức.",
+    "Theo trung bình influence score, nhóm entity_type nổi bật nhất hiện tại là INDUSTRY."
+  ],
+  "bi_handoff": {
+    "primary_dataset": "data/insights/node_insight_table.csv",
+    "supporting_datasets": [
+      "data/insights/top_rankings.csv",
+      "data/insights/overview_kpis.csv",
+      "data/insights/entity_type_summary.csv"
+    ],
+    "recommended_visuals": [
+      {
+        "visual": "Top influence bar chart",
+        "source": "top_rankings.csv",
+        "filter": "ranking_group = top_influence"
+      },
+      {
+        "visual": "Broker network spotlight",
+        "source": "top_rankings.csv",
+        "filter": "ranking_group = top_brokers"
+      },
+      {
+        "visual": "Entity type distribution",
+        "source": "entity_type_summary.csv",
+        "filter": "none"
+      },
+      {
+        "visual": "Quality warnings",
+        "source": "overview_kpis.csv",
+        "filter": "kpi_name in (noise_like_nodes, encoding_issue_nodes)"
+      }
+    ],
+    "notes": [
+      "node_insight_table.csv is the main flat table for slicing by entity_type, flow_pattern, heuristic_influence_label, and quality flags.",
+      "top_rankings.csv is pre-ranked to reduce Power BI transformation effort.",
+      "Rows marked analysis_quality != usable should be reviewed before being highlighted in dashboards."
+    ]
+  }
+}

@@ -1,5 +1,5 @@
 {
-  "timestamp_utc": "2026-03-26T05:54:45.856683+00:00",
+  "timestamp_utc": "2026-04-05T05:04:33.419598+00:00",
   "data_dir": "D:\\KLTN3\\extraction-system\\feature_engineering_output",
   "feature_names": [
     "log_pagerank",
@@ -114,6 +114,12 @@
       363
     ]
   ],
+  "test_extended_metrics": {
+    "precision_macro": 0.8957045220343094,
+    "precision_weighted": 0.8956795015580364,
+    "recall_macro": 0.8883335842239951,
+    "recall_weighted": 0.8884826325411335
+  },
   "splits": {
     "X_train": "X_train.csv",
     "y_train": "y_train.csv",

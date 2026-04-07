@@ -338,6 +338,21 @@ table.tt td { padding:5px 12px; white-space:nowrap; max-width:200px; overflow:hi
   display:flex; flex-direction:column; overflow:hidden;
 }
 .rp-header { padding:12px 14px 10px; border-bottom:1px solid var(--b1); }
+.rp-tabs {
+  display:flex; gap:6px; padding:10px 14px 0;
+  border-bottom:1px solid var(--b1);
+}
+.rp-tab {
+  padding:6px 10px; border-radius:999px; border:1px solid var(--b1);
+  background:var(--bg); color:var(--t2); cursor:pointer;
+  font-size:10px; font-weight:700; letter-spacing:.6px; text-transform:uppercase;
+  transition:all .15s;
+}
+.rp-tab.on {
+  background:var(--acc); border-color:var(--acc); color:#fff;
+}
+.rp-tab:hover { border-color:var(--acc); color:var(--acc); }
+.rp-tab.on:hover { color:#fff; }
 .rp-entity-name {
   font-size:16px; font-weight:700; letter-spacing:-.3px;
   line-height:1.25; margin-bottom:6px;
@@ -350,6 +365,8 @@ table.tt td { padding:5px 12px; white-space:nowrap; max-width:200px; overflow:hi
 }
 .rp-empty-icon { font-size:26px; opacity:.25; }
 .rp-empty-txt  { font-size:11.5px; line-height:1.7; }
+.rp-pane { display:none; flex-direction:column; overflow:hidden; flex:1; min-height:0; }
+.rp-pane.on { display:flex; }
 
 /* metrics grid */
 .rp-metrics {
@@ -392,6 +409,62 @@ table.tt td { padding:5px 12px; white-space:nowrap; max-width:200px; overflow:hi
 }
 .rp-rel-target { font-size:11.5px; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .rp-rel-freq { font-size:9px; font-family:var(--mono); color:var(--t3); flex-shrink:0; margin-left:auto; }
+
+/* insights */
+.ins-wrap { flex:1; overflow-y:auto; }
+.ins-wrap::-webkit-scrollbar { width:3px; }
+.ins-wrap::-webkit-scrollbar-thumb { background:var(--b2); border-radius:2px; }
+.ins-section { border-bottom:1px solid var(--b1); padding:12px 14px; }
+.ins-section-title {
+  font-size:9.5px; font-weight:700; letter-spacing:1px;
+  text-transform:uppercase; color:var(--t3); margin-bottom:10px;
+}
+.ins-kpis {
+  display:grid; grid-template-columns:1fr 1fr; gap:6px;
+}
+.ins-kpi {
+  background:var(--bg); border:1px solid var(--b1);
+  border-radius:var(--r); padding:8px 10px;
+}
+.ins-kpi-label {
+  font-size:9px; font-weight:700; letter-spacing:.8px;
+  text-transform:uppercase; color:var(--t3); margin-bottom:4px;
+}
+.ins-kpi-value {
+  font-size:16px; font-weight:700; font-family:var(--mono); color:var(--t1);
+}
+.ins-list { display:flex; flex-direction:column; gap:6px; }
+.ins-item {
+  display:flex; align-items:flex-start; gap:8px; padding:8px 9px;
+  background:var(--bg); border:1px solid var(--b1); border-radius:var(--r);
+}
+.ins-rank {
+  width:18px; flex-shrink:0; font-family:var(--mono); color:var(--t3); font-size:10px;
+}
+.ins-main { min-width:0; flex:1; }
+.ins-node {
+  font-size:11.5px; font-weight:700; color:var(--t1); cursor:pointer;
+  word-break:break-word;
+}
+.ins-node:hover { color:var(--acc); }
+.ins-meta {
+  margin-top:4px; font-size:10px; color:var(--t2); font-family:var(--mono);
+  display:flex; flex-wrap:wrap; gap:8px;
+}
+.ins-bullets { display:flex; flex-direction:column; gap:8px; }
+.ins-bullet {
+  padding-left:12px; position:relative; color:var(--t2); line-height:1.65;
+}
+.ins-bullet::before {
+  content:''; position:absolute; left:0; top:8px;
+  width:4px; height:4px; border-radius:50%; background:var(--acc);
+}
+.ins-note {
+  color:var(--t2); font-size:11px; line-height:1.7;
+}
+.ins-empty {
+  padding:16px 14px; color:var(--t3); font-size:11.5px; line-height:1.7;
+}
 
 /* ══════════════════ LOADING BAR ══════════════════ */
 .load-bar {
@@ -576,14 +649,30 @@ table.tt td { padding:5px 12px; white-space:nowrap; max-width:200px; overflow:hi
 
   <!-- RIGHT -->
   <div class="right-panel">
-    <div class="rp-header">
-      <div class="section-label">Entity Detail</div>
+    <div class="rp-tabs">
+      <div class="rp-tab on" id="tab-insights" onclick="setRightPanelMode('insights')">Insights</div>
+      <div class="rp-tab" id="tab-entity" onclick="setRightPanelMode('entity')">Entity</div>
     </div>
-    <div class="rp-empty" id="rp-empty">
-      <div class="rp-empty-icon">◎</div>
-      <div class="rp-empty-txt">Search hoặc click entity<br>để xem quan hệ chi tiết</div>
+
+    <div class="rp-pane on" id="rp-insights-pane">
+      <div class="rp-header">
+        <div class="section-label">Insight Overview</div>
+      </div>
+      <div class="ins-wrap" id="rp-insights">
+        <div class="ins-empty">Dang tai insight tu dong...</div>
+      </div>
     </div>
-    <div id="rp-content" style="display:none;flex-direction:column;overflow:hidden;flex:1"></div>
+
+    <div class="rp-pane" id="rp-entity-pane">
+      <div class="rp-header">
+        <div class="section-label">Entity Detail</div>
+      </div>
+      <div class="rp-empty" id="rp-empty">
+        <div class="rp-empty-icon">&#9718;</div>
+        <div class="rp-empty-txt">Search hoac click entity<br>de xem quan he chi tiet</div>
+      </div>
+      <div id="rp-content" style="display:none;flex-direction:column;overflow:hidden;flex:1"></div>
+    </div>
   </div>
 
 </div>
@@ -623,6 +712,8 @@ let hiddenRels   = new Set();
 let history      = [];
 let acIdx        = -1;
 let svgEl, gEl, zoomBeh, sim;
+let insightReport = null;
+let rightPanelMode = 'insights';
 
 // table state
 let tableRows    = [];   // current filtered+sorted rows
@@ -829,7 +920,133 @@ function renderEgo(rootId) {
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 //  RIGHT PANEL
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+function setRightPanelMode(mode) {
+  rightPanelMode = mode;
+  document.getElementById('tab-insights')?.classList.toggle('on', mode === 'insights');
+  document.getElementById('tab-entity')?.classList.toggle('on', mode === 'entity');
+  document.getElementById('rp-insights-pane')?.classList.toggle('on', mode === 'insights');
+  document.getElementById('rp-entity-pane')?.classList.toggle('on', mode === 'entity');
+}
+
+function fmtNum(v, digits=0) {
+  const n = Number(v);
+  if (!Number.isFinite(n)) return '?';
+  return digits ? n.toFixed(digits) : Math.round(n).toLocaleString();
+}
+
+function fmtPct(v) {
+  const n = Number(v);
+  if (!Number.isFinite(n)) return '?';
+  return `${(n * 100).toFixed(1)}%`;
+}
+
+function insightMeta(item, pairs) {
+  return pairs
+    .filter(([_, value]) => value !== undefined && value !== null && value !== '')
+    .map(([label, value]) => `<span>${label}: ${value}</span>`)
+    .join('');
+}
+
+function renderInsightList(title, items, metaBuilder) {
+  if (!items || !items.length) return '';
+  return `
+    <div class="ins-section">
+      <div class="ins-section-title">${title}</div>
+      <div class="ins-list">
+        ${items.slice(0, 6).map((item, idx) => `
+          <div class="ins-item">
+            <div class="ins-rank">#${idx + 1}</div>
+            <div class="ins-main">
+              <div class="ins-node" onclick="selectEntity('${String(item.node || '').replace(/'/g, "\\'")}')">${item.node || '?'}</div>
+              <div class="ins-meta">${metaBuilder(item)}</div>
+            </div>
+          </div>
+        `).join('')}
+      </div>
+    </div>`;
+}
+
+function renderInsightsPanel() {
+  const el = document.getElementById('rp-insights');
+  if (!el) return;
+  if (!insightReport) {
+    el.innerHTML = `<div class="ins-empty">Chua tim thay file insight. Neu dang chay server tinh, hay dam bao co <code>data/insights/automatic_insights.json</code>.</div>`;
+    return;
+  }
+
+  const overview = insightReport.graph?.overview || {};
+  const quality = insightReport.graph?.quality || {};
+  const narrative = insightReport.narrative || [];
+  const ml = insightReport.ml || {};
+
+  el.innerHTML = `
+    <div class="ins-section">
+      <div class="ins-section-title">Executive Summary</div>
+      <div class="ins-bullets">
+        ${narrative.length
+          ? narrative.map(line => `<div class="ins-bullet">${line}</div>`).join('')
+          : `<div class="ins-note">Chua co narrative insight.</div>`}
+      </div>
+    </div>
+
+    <div class="ins-section">
+      <div class="ins-section-title">Overview</div>
+      <div class="ins-kpis">
+        <div class="ins-kpi"><div class="ins-kpi-label">Nodes</div><div class="ins-kpi-value">${fmtNum(overview.nodes)}</div></div>
+        <div class="ins-kpi"><div class="ins-kpi-label">Edges</div><div class="ins-kpi-value">${fmtNum(overview.edges_unique)}</div></div>
+        <div class="ins-kpi"><div class="ins-kpi-label">Median Degree</div><div class="ins-kpi-value">${fmtNum(overview.median_degree, 1)}</div></div>
+        <div class="ins-kpi"><div class="ins-kpi-label">Noise Ratio</div><div class="ins-kpi-value">${fmtPct(quality.noise_ratio)}</div></div>
+      </div>
+    </div>
+
+    ${renderInsightList('Top Influence', insightReport.graph?.top_influence || [], item =>
+      insightMeta(item, [
+        ['type', item.entity_type],
+        ['degree', fmtNum(item.total_degree)],
+        ['score', fmtNum(item.influence_score, 3)],
+      ])
+    )}
+
+    ${renderInsightList('Top Brokers', insightReport.graph?.top_brokers || [], item =>
+      insightMeta(item, [
+        ['type', item.entity_type],
+        ['broker', fmtNum(item.betweenness_x_diversity, 3)],
+        ['diversity', fmtNum(item.relation_diversity)],
+      ])
+    )}
+
+    ${renderInsightList('Entity Types', insightReport.graph?.entity_type_summary || [], item =>
+      insightMeta(item, [
+        ['nodes', fmtNum(item.node_count)],
+        ['mean infl.', fmtNum(item.mean_influence, 3)],
+        ['high', fmtNum(item.high_influence_nodes)],
+      ])
+    )}
+
+    <div class="ins-section">
+      <div class="ins-section-title">ML</div>
+      <div class="ins-note">
+        ${ml.available ? (ml.summary || []).join('<br>') || 'ML artifacts available.' : 'ML artifacts not found; using graph-based heuristic insights.'}
+      </div>
+    </div>
+  `;
+}
+
+async function loadDefaultInsights() {
+  try {
+    const res = await fetch('data/insights/automatic_insights.json', {cache:'no-store'});
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    insightReport = await res.json();
+    renderInsightsPanel();
+  } catch (err) {
+    insightReport = null;
+    renderInsightsPanel();
+    console.warn('Insight load skipped:', err);
+  }
+}
+
 function showRightPanel(d) {
+  setRightPanelMode('entity');
   const nd = nodeIndex.get(d.id);
   if (!nd) return;
   const color = ec(nd.type);
@@ -1152,9 +1369,45 @@ function loadTriples(triples){
 }
 function loadDemo(){loadTriples(DEMO);setTimeout(()=>selectEntity('Vingroup'),300);}
 
+function parseCsvText(text) {
+  const lines=text.trim().split('\n');
+  const hdr=lines[0].split(',').map(h=>h.replace(/"/g,'').trim());
+  return lines.slice(1).map(line=>{
+    const vals=(line.match(/(".*?"|[^,]+)(?=,|$)/g)||[]);
+    const o={};hdr.forEach((h,i)=>{o[h]=(vals[i]||'').replace(/"/g,'').trim();});return o;
+  });
+}
+
+async function loadDefaultData() {
+  try {
+    const resJson = await fetch('data/triples.json', {cache:'no-store'});
+    if (resJson.ok) {
+      let data = await resJson.json();
+      if (data && data.triples) data = data.triples;
+      if (Array.isArray(data) && data.length) {
+        loadTriples(data);
+        return;
+      }
+    }
+  } catch (err) {
+    console.warn('Default JSON load skipped:', err);
+  }
+
+  try {
+    const resCsv = await fetch('data/triples.csv', {cache:'no-store'});
+    if (resCsv.ok) {
+      const text = await resCsv.text();
+      const rows = parseCsvText(text);
+      if (rows.length) loadTriples(rows);
+    }
+  } catch (err) {
+    console.warn('Default CSV load skipped:', err);
+  }
+}
+
 function handleFile(e){
   const file=e.target.files[0]; if(!file)return;
-  toast('Đang đọc file...');
+  toast('Dang doc file...');
   const r=new FileReader();
   r.onload=ev=>parseFile(ev.target.result,file.name);
   r.readAsText(file,'utf-8'); e.target.value='';
@@ -1163,21 +1416,11 @@ function parseFile(text,name){
   try{
     let t;
     if(name.endsWith('.json')){let d=JSON.parse(text);if(d.triples)d=d.triples;t=Array.isArray(d)?d:[];}
-    else{
-      const lines=text.trim().split('\n');
-      const hdr=lines[0].split(',').map(h=>h.replace(/"/g,'').trim());
-      t=lines.slice(1).map(line=>{
-        const vals=(line.match(/(\".*?\"|[^,]+)(?=,|$)/g)||[]);
-        const o={};hdr.forEach((h,i)=>{o[h]=(vals[i]||'').replace(/"/g,'').trim();});return o;
-      });
-    }
+    else t = parseCsvText(text);
     loadTriples(t);
-  }catch(err){toast('Lỗi parse: '+err.message);}
+  }catch(err){toast('Loi parse: '+err.message);}
 }
 
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-//  RESIZE HANDLE
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 (function initResize(){
   const handle = document.getElementById('resize-handle');
   const wrap   = document.getElementById('triple-table-wrap');
@@ -1224,6 +1467,9 @@ function init(){
   zoomBeh=d3.zoom().scaleExtent([.05,5]).on('zoom',e=>gEl.attr('transform',e.transform));
   svgEl.call(zoomBeh);
   gEl=svgEl.append('g');
+  renderInsightsPanel();
+  loadDefaultInsights();
+  loadDefaultData();
   document.addEventListener('keydown',e=>{
     if(e.key==='/'&&document.activeElement.tagName!=='INPUT'){
       e.preventDefault(); document.getElementById('search-input').focus();

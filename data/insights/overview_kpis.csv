@@ -1,0 +1,14 @@
+﻿kpi_name,kpi_value
+nodes,7288.0
+edges_unique,6226.0
+density,0.0001172335679812342
+weakly_connected_components,1895.0
+strongly_connected_components,6784.0
+relation_types,12.0
+median_degree,1.0
+median_influence,0.0025942630478541003
+high_influence_nodes,729.0
+noise_like_nodes,663.0
+encoding_issue_nodes,516.0
+noise_ratio,0.09097145993413831
+encoding_issue_ratio,0.070801317233809

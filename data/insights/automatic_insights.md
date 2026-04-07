@@ -1,5 +1,13 @@
 # Automatic Insights Report
 
+## Executive Summary
+- Đồ thị rất thưa; median degree chỉ khoảng 1, nên phần lớn thực thể mới chỉ có một số kết nối rất hạn chế.
+- Mạng đang phân mảnh mạnh với nhiều weakly connected components, vì vậy insight hiện nghiêng về centrality cục bộ hơn là cấu trúc cụm lớn.
+- Nhóm ảnh hưởng cao nhất hiện tại tập trung ở FPT, Viettel, Apple; đây là các node nên ưu tiên đưa lên dashboard hoặc báo cáo điều hành.
+- Các broker nổi bật như Apple, FPT, Viettel có vai trò nối nhiều kiểu quan hệ, phù hợp để xem như hub trung gian trong mạng.
+- Tỷ lệ node nghi nhiễu khoảng 9.1%; cần cảnh báo khi dùng các bảng top list vì node generic có thể chen vào insight.
+- Theo trung bình influence score, nhóm entity_type nổi bật nhất hiện tại là INDUSTRY.
+
 ## Graph Overview
 - Graph has 7,288 nodes, 6,226 unique edges, density 0.000117.
 - Weakly connected components: 1,895; strongly connected components: 6,784.

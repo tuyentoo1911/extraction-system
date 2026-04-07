@@ -21,14 +21,14 @@
       "betweenness": 0.0007723789283465915,
       "pagerank": 0.0006633141198670662,
       "pagerank_unweighted": 0.000741091400797347,
-      "hub_score": 1.5408872424103695e-05,
-      "authority_score": 0.0003828994756240792,
+      "hub_score": 1.5408872424082116e-05,
+      "authority_score": 0.00038289947562403996,
       "avg_edge_confidence": 0.725228971744252,
       "max_edge_confidence": 0.75,
       "avg_edge_frequency": 1.1869158878504673,
       "total_edge_frequency": 127.0,
       "relation_diversity": 5.0,
-      "influence_score": 0.355463272930417
+      "influence_score": 0.35546327293041713
     },
     {
       "node": "FPT",
@@ -43,8 +43,8 @@
       "betweenness": 0.0016453159610906615,
       "pagerank": 0.0031114750343618027,
       "pagerank_unweighted": 0.0030670174527961027,
-      "hub_score": 0.0007530089206248012,
-      "authority_score": 0.0001022648267680428,
+      "hub_score": 0.000753008920624779,
+      "authority_score": 0.00010226482676783621,
       "avg_edge_confidence": 0.7747076946300465,
       "max_edge_confidence": 0.8500000238418579,
       "avg_edge_frequency": 1.5164835164835164,
@@ -65,14 +65,14 @@
       "betweenness": 0.0015872143640286761,
       "pagerank": 0.001028640935419838,
       "pagerank_unweighted": 0.0009013127836755094,
-      "hub_score": 0.0025159404356827116,
-      "authority_score": 0.055897661439323114,
+      "hub_score": 0.0025159404356825256,
+      "authority_score": 0.055897661439323336,
       "avg_edge_confidence": 0.7439698617752284,
       "max_edge_confidence": 0.8500000238418579,
       "avg_edge_frequency": 1.9863013698630136,
       "total_edge_frequency": 145.0,
       "relation_diversity": 9.0,
-      "influence_score": 0.4460903773658381
+      "influence_score": 0.4460903773658382
     },
     {
       "node": "Viettel",
@@ -87,14 +87,14 @@
       "betweenness": 0.0018634793942780379,
       "pagerank": 0.0026050955729406363,
       "pagerank_unweighted": 0.002876798744008723,
-      "hub_score": 0.00027514403201301394,
-      "authority_score": 4.6506910348763506e-05,
+      "hub_score": 0.00027514403201298304,
+      "authority_score": 4.650691034884029e-05,
       "avg_edge_confidence": 0.752843479660974,
       "max_edge_confidence": 0.8499000072479248,
       "avg_edge_frequency": 1.3768115942028984,
       "total_edge_frequency": 95.0,
       "relation_diversity": 7.0,
-      "influence_score": 0.6394218187990022
+      "influence_score": 0.6394218187990023
     },
     {
       "node": "công nghiệp",
@@ -109,14 +109,14 @@
       "betweenness": 3.9327157538151576e-05,
       "pagerank": 0.003328305214685268,
       "pagerank_unweighted": 0.0032736563067869585,
-      "hub_score": 0.0,
-      "authority_score": 0.001069363330248914,
+      "hub_score": 1.3835069818518974e-19,
+      "authority_score": 0.0010693633302487815,
       "avg_edge_confidence": 0.7179772059122721,
       "max_edge_confidence": 0.75,
       "avg_edge_frequency": 1.1754385964912282,
       "total_edge_frequency": 67.0,
       "relation_diversity": 3.0,
-      "influence_score": 0.5103130388995032
+      "influence_score": 0.5103130388995033
     },
     {
       "node": "Vietlott",
@@ -131,14 +131,14 @@
       "betweenness": 0.0,
       "pagerank": 7.422642943547452e-05,
       "pagerank_unweighted": 7.431581429202916e-05,
-      "hub_score": 3.0131616058384145e-09,
-      "authority_score": 0.0,
+      "hub_score": 3.0131616139719603e-09,
+      "authority_score": 1.577825074687864e-19,
       "avg_edge_confidence": 0.7434653823192303,
       "max_edge_confidence": 0.75,
       "avg_edge_frequency": 1.2115384615384615,
       "total_edge_frequency": 63.0,
       "relation_diversity": 1.0,
-      "influence_score": 0.09622641509433963
+      "influence_score": 0.09622641509433975
     },
     {
       "node": "Trung Quốc",
@@ -153,14 +153,14 @@
       "betweenness": 0.00036311981285998805,
       "pagerank": 0.0002523407685512451,
       "pagerank_unweighted": 0.00020731681082522785,
-      "hub_score": 1.9844818877642955e-06,
-      "authority_score": 0.001332445333210281,
+      "hub_score": 1.984481887762274e-06,
+      "authority_score": 0.0013324453332101776,
       "avg_edge_confidence": 0.7118803884468827,
       "max_edge_confidence": 0.75,
       "avg_edge_frequency": 1.3333333333333333,
       "total_edge_frequency": 68.0,
       "relation_diversity": 4.0,
-      "influence_score": 0.15574421638018873
+      "influence_score": 0.15574421638018882
     },
     {
       "node": "UBND",
@@ -175,14 +175,14 @@
       "betweenness": 0.0004081322685317081,
       "pagerank": 0.0019828821158211153,
       "pagerank_unweighted": 0.002174068661566419,
-      "hub_score": 9.026691124521507e-05,
-      "authority_score": 1.2191499508722124e-05,
+      "hub_score": 9.026691124521204e-05,
+      "authority_score": 1.219149950871338e-05,
       "avg_edge_confidence": 0.8115809531438918,
       "max_edge_confidence": 0.8499000072479248,
       "avg_edge_frequency": 1.1904761904761905,
       "total_edge_frequency": 50.0,
       "relation_diversity": 6.0,
-      "influence_score": 0.3557836858886119
+      "influence_score": 0.35578368588861203
     },
     {
       "node": "Google",
@@ -197,14 +197,14 @@
       "betweenness": 0.0014008297549503532,
       "pagerank": 0.001388661619127133,
       "pagerank_unweighted": 0.0015902104881764928,
-      "hub_score": 0.006011578641429938,
-      "authority_score": 0.0003971286321900562,
+      "hub_score": 0.0060115786414299405,
+      "authority_score": 0.0003971286321900237,
       "avg_edge_confidence": 0.792562498152256,
       "max_edge_confidence": 0.8500000238418579,
       "avg_edge_frequency": 1.275,
       "total_edge_frequency": 51.0,
       "relation_diversity": 7.0,
-      "influence_score": 0.38566474857477895
+      "influence_score": 0.385664748574779
     },
     {
       "node": "VPBank",
@@ -219,14 +219,14 @@
       "betweenness": 0.000893876119213385,
       "pagerank": 0.0008373889655180397,
       "pagerank_unweighted": 0.0008518909091731091,
-      "hub_score": 2.2368927322787166e-05,
-      "authority_score": 2.4199001298748566e-06,
+      "hub_score": 2.2368927322785366e-05,
+      "authority_score": 2.4199001298789892e-06,
       "avg_edge_confidence": 0.7154487206385686,
       "max_edge_confidence": 0.8500000238418579,
       "avg_edge_frequency": 1.1538461538461537,
       "total_edge_frequency": 45.0,
       "relation_diversity": 7.0,
-      "influence_score": 0.26144530399616983
+      "influence_score": 0.26144530399616994
     },
     {
       "node": "Nvidia",
@@ -241,14 +241,14 @@
       "betweenness": 0.001266087003785371,
       "pagerank": 0.0005833363276365551,
       "pagerank_unweighted": 0.0006219927326056414,
-      "hub_score": 0.0011871734374234507,
-      "authority_score": 0.032965531233715456,
+      "hub_score": 0.0011871734374234283,
+      "authority_score": 0.03296553123371558,
       "avg_edge_confidence": 0.6967131580177106,
       "max_edge_confidence": 0.8500000238418579,
       "avg_edge_frequency": 1.2894736842105263,
       "total_edge_frequency": 49.0,
       "relation_diversity": 9.0,
-      "influence_score": 0.2815888070317653
+      "influence_score": 0.2815888070317654
     },
     {
       "node": "Mỹ",
@@ -263,14 +263,14 @@
       "betweenness": 0.00023360909777524286,
       "pagerank": 0.0014273120928418323,
       "pagerank_unweighted": 0.0011965193847838123,
-      "hub_score": 4.730264801085897e-06,
-      "authority_score": 0.0007766687352732251,
+      "hub_score": 4.730264801082583e-06,
+      "authority_score": 0.0007766687352732066,
       "avg_edge_confidence": 0.7058810736681964,
       "max_edge_confidence": 0.7599999904632568,
       "avg_edge_frequency": 1.2702702702702702,
       "total_edge_frequency": 47.0,
       "relation_diversity": 5.0,
-      "influence_score": 0.2596353998823887
+      "influence_score": 0.2596353998823888
     },
     {
       "node": "năm",
@@ -285,14 +285,14 @@
       "betweenness": 1.2807694983689212e-06,
       "pagerank": 0.00019158632435453297,
       "pagerank_unweighted": 0.00019180960588518174,
-      "hub_score": 1.89086778078384e-06,
-      "authority_score": 0.0,
+      "hub_score": 1.8908677807830659e-06,
+      "authority_score": -4.532380040522115e-19,
       "avg_edge_confidence": 0.7384314247540065,
       "max_edge_confidence": 0.75,
       "avg_edge_frequency": 1.0857142857142856,
       "total_edge_frequency": 38.0,
       "relation_diversity": 2.0,
-      "influence_score": 0.07871459314278939
+      "influence_score": 0.07871459314278952
     },
     {
       "node": "công nghệ",
@@ -307,14 +307,14 @@
       "betweenness": 9.41742278212442e-06,
       "pagerank": 0.0021496979737553063,
       "pagerank_unweighted": 0.002016728365058455,
-      "hub_score": 0.0,
-      "authority_score": 0.001748612649916928,
+      "hub_score": -1.2212846929673867e-20,
+      "authority_score": 0.0017486126499168268,
       "avg_edge_confidence": 0.7204697132110596,
       "max_edge_confidence": 0.7465999722480774,
       "avg_edge_frequency": 1.303030303030303,
       "total_edge_frequency": 43.0,
       "relation_diversity": 2.0,
-      "influence_score": 0.31721668924473967
+      "influence_score": 0.3172166892447398
     },
     {
       "node": "Techcombank",
@@ -329,14 +329,14 @@
       "betweenness": 7.94830482811301e-06,
       "pagerank": 0.0008465551064686619,
       "pagerank_unweighted": 0.0008808344171745773,
-      "hub_score": 9.081325020065198e-06,
-      "authority_score": 4.003030966236405e-08,
+      "hub_score": 9.08132502005128e-06,
+      "authority_score": 4.003030963562149e-08,
       "avg_edge_confidence": 0.7686757629567925,
       "max_edge_confidence": 0.8500000238418579,
       "avg_edge_frequency": 1.4545454545454546,
       "total_edge_frequency": 48.0,
       "relation_diversity": 5.0,
-      "influence_score": 0.15616712591449594
+      "influence_score": 0.15616712591449605
     },
     {
       "node": "Samsung",
@@ -351,14 +351,14 @@
       "betweenness": 0.001305097915297524,
       "pagerank": 0.00046259647111708524,
       "pagerank_unweighted": 0.0004283915653567834,
-      "hub_score": 0.010814161571552969,
-      "authority_score": 0.0019018975220128577,
+      "hub_score": 0.010814161571552957,
+      "authority_score": 0.0019018975220127625,
       "avg_edge_confidence": 0.7465516078856683,
       "max_edge_confidence": 0.8499000072479248,
       "avg_edge_frequency": 2.096774193548387,
       "total_edge_frequency": 65.0,
       "relation_diversity": 7.0,
-      "influence_score": 0.24518236084234424
+      "influence_score": 0.24518236084234432
     },
     {
       "node": "Huawei",
@@ -373,14 +373,14 @@
       "betweenness": 0.0002512011126014736,
       "pagerank": 0.0003287310507696161,
       "pagerank_unweighted": 0.0003016353186238493,
-      "hub_score": 0.00396829349137249,
-      "authority_score": 0.00022128762066324378,
+      "hub_score": 0.0039682934913724726,
+      "authority_score": 0.00022128762066320223,
       "avg_edge_confidence": 0.6784833331902821,
       "max_edge_confidence": 0.8497999906539917,
       "avg_edge_frequency": 1.6,
       "total_edge_frequency": 48.0,
       "relation_diversity": 7.0,
-      "influence_score": 0.11305116401168759
+      "influence_score": 0.11305116401168769
     },
     {
       "node": "Bộ Công an",
@@ -395,14 +395,14 @@
       "betweenness": 0.0014273180503198949,
       "pagerank": 0.0017494336130547824,
       "pagerank_unweighted": 0.001417709511784035,
-      "hub_score": 8.426041117270809e-07,
-      "authority_score": 7.26409457779135e-06,
+      "hub_score": 8.42604111729898e-07,
+      "authority_score": 7.264094577799637e-06,
       "avg_edge_confidence": 0.8009607089417321,
       "max_edge_confidence": 0.8497999906539917,
       "avg_edge_frequency": 1.3571428571428572,
       "total_edge_frequency": 38.0,
       "relation_diversity": 3.0,
-      "influence_score": 0.41005574063468214
+      "influence_score": 0.41005574063468225
     },
     {
       "node": "CMC",
@@ -417,14 +417,14 @@
       "betweenness": 0.0011548215139089765,
       "pagerank": 0.0008142400870181324,
       "pagerank_unweighted": 0.0008020322224653416,
-      "hub_score": 6.623162489763887e-05,
-      "authority_score": 0.00047351800993302904,
+      "hub_score": 6.62316248976335e-05,
+      "authority_score": 0.0004735180099330251,
       "avg_edge_confidence": 0.7912750031266894,
       "max_edge_confidence": 0.8500000238418579,
       "avg_edge_frequency": 1.25,
       "total_edge_frequency": 35.0,
       "relation_diversity": 6.0,
-      "influence_score": 0.26604155931445067
+      "influence_score": 0.2660415593144508
     },
     {
       "node": "NHNN",
@@ -439,14 +439,14 @@
       "betweenness": 0.0005387127729479218,
       "pagerank": 0.00059141005824492,
       "pagerank_unweighted": 0.0006111711241623821,
-      "hub_score": 2.0299501235787887e-06,
-      "authority_score": 2.0197267070866713e-06,
+      "hub_score": 2.029950123576032e-06,
+      "authority_score": 2.019726707085499e-06,
       "avg_edge_confidence": 0.7691964294229235,
       "max_edge_confidence": 0.8500000238418579,
       "avg_edge_frequency": 1.1071428571428572,
       "total_edge_frequency": 31.0,
       "relation_diversity": 6.0,
-      "influence_score": 0.17233574392636308
+      "influence_score": 0.17233574392636322
     }
   ],
   "top_by_influence": [
@@ -463,8 +463,8 @@
       "betweenness": 0.0016453159610906615,
       "pagerank": 0.0031114750343618027,
       "pagerank_unweighted": 0.0030670174527961027,
-      "hub_score": 0.0007530089206248012,
-      "authority_score": 0.0001022648267680428,
+      "hub_score": 0.000753008920624779,
+      "authority_score": 0.00010226482676783621,
       "avg_edge_confidence": 0.7747076946300465,
       "max_edge_confidence": 0.8500000238418579,
       "avg_edge_frequency": 1.5164835164835164,
@@ -485,14 +485,14 @@
       "betweenness": 0.0018634793942780379,
       "pagerank": 0.0026050955729406363,
       "pagerank_unweighted": 0.002876798744008723,
-      "hub_score": 0.00027514403201301394,
-      "authority_score": 4.6506910348763506e-05,
+      "hub_score": 0.00027514403201298304,
+      "authority_score": 4.650691034884029e-05,
       "avg_edge_confidence": 0.752843479660974,
       "max_edge_confidence": 0.8499000072479248,
       "avg_edge_frequency": 1.3768115942028984,
       "total_edge_frequency": 95.0,
       "relation_diversity": 7.0,
-      "influence_score": 0.6394218187990022
+      "influence_score": 0.6394218187990023
     },
     {
       "node": "công nghiệp",
@@ -507,14 +507,14 @@
       "betweenness": 3.9327157538151576e-05,
       "pagerank": 0.003328305214685268,
       "pagerank_unweighted": 0.0032736563067869585,
-      "hub_score": 0.0,
-      "authority_score": 0.001069363330248914,
+      "hub_score": 1.3835069818518974e-19,
+      "authority_score": 0.0010693633302487815,
       "avg_edge_confidence": 0.7179772059122721,
       "max_edge_confidence": 0.75,
       "avg_edge_frequency": 1.1754385964912282,
       "total_edge_frequency": 67.0,
       "relation_diversity": 3.0,
-      "influence_score": 0.5103130388995032
+      "influence_score": 0.5103130388995033
     },
     {
       "node": "Apple",
@@ -529,14 +529,14 @@
       "betweenness": 0.0015872143640286761,
       "pagerank": 0.001028640935419838,
       "pagerank_unweighted": 0.0009013127836755094,
-      "hub_score": 0.0025159404356827116,
-      "authority_score": 0.055897661439323114,
+      "hub_score": 0.0025159404356825256,
+      "authority_score": 0.055897661439323336,
       "avg_edge_confidence": 0.7439698617752284,
       "max_edge_confidence": 0.8500000238418579,
       "avg_edge_frequency": 1.9863013698630136,
       "total_edge_frequency": 145.0,
       "relation_diversity": 9.0,
-      "influence_score": 0.4460903773658381
+      "influence_score": 0.4460903773658382
     },
     {
       "node": "Bộ Công an",
@@ -551,14 +551,14 @@
       "betweenness": 0.0014273180503198949,
       "pagerank": 0.0017494336130547824,
       "pagerank_unweighted": 0.001417709511784035,
-      "hub_score": 8.426041117270809e-07,
-      "authority_score": 7.26409457779135e-06,
+      "hub_score": 8.42604111729898e-07,
+      "authority_score": 7.264094577799637e-06,
       "avg_edge_confidence": 0.8009607089417321,
       "max_edge_confidence": 0.8497999906539917,
       "avg_edge_frequency": 1.3571428571428572,
       "total_edge_frequency": 38.0,
       "relation_diversity": 3.0,
-      "influence_score": 0.41005574063468214
+      "influence_score": 0.41005574063468225
     },
     {
       "node": "Google",
@@ -573,14 +573,14 @@
       "betweenness": 0.0014008297549503532,
       "pagerank": 0.001388661619127133,
       "pagerank_unweighted": 0.0015902104881764928,
-      "hub_score": 0.006011578641429938,
-      "authority_score": 0.0003971286321900562,
+      "hub_score": 0.0060115786414299405,
+      "authority_score": 0.0003971286321900237,
       "avg_edge_confidence": 0.792562498152256,
       "max_edge_confidence": 0.8500000238418579,
       "avg_edge_frequency": 1.275,
       "total_edge_frequency": 51.0,
       "relation_diversity": 7.0,
-      "influence_score": 0.38566474857477895
+      "influence_score": 0.385664748574779
     },
     {
       "node": "UBND",
@@ -595,14 +595,14 @@
       "betweenness": 0.0004081322685317081,
       "pagerank": 0.0019828821158211153,
       "pagerank_unweighted": 0.002174068661566419,
-      "hub_score": 9.026691124521507e-05,
-      "authority_score": 1.2191499508722124e-05,
+      "hub_score": 9.026691124521204e-05,
+      "authority_score": 1.219149950871338e-05,
       "avg_edge_confidence": 0.8115809531438918,
       "max_edge_confidence": 0.8499000072479248,
       "avg_edge_frequency": 1.1904761904761905,
       "total_edge_frequency": 50.0,
       "relation_diversity": 6.0,
-      "influence_score": 0.3557836858886119
+      "influence_score": 0.35578368588861203
     },
     {
       "node": "Việt Nam",
@@ -617,14 +617,14 @@
       "betweenness": 0.0007723789283465915,
       "pagerank": 0.0006633141198670662,
       "pagerank_unweighted": 0.000741091400797347,
-      "hub_score": 1.5408872424103695e-05,
-      "authority_score": 0.0003828994756240792,
+      "hub_score": 1.5408872424082116e-05,
+      "authority_score": 0.00038289947562403996,
       "avg_edge_confidence": 0.725228971744252,
       "max_edge_confidence": 0.75,
       "avg_edge_frequency": 1.1869158878504673,
       "total_edge_frequency": 127.0,
       "relation_diversity": 5.0,
-      "influence_score": 0.355463272930417
+      "influence_score": 0.35546327293041713
     },
     {
       "node": "công nghệ",
@@ -639,14 +639,14 @@
       "betweenness": 9.41742278212442e-06,
       "pagerank": 0.0021496979737553063,
       "pagerank_unweighted": 0.002016728365058455,
-      "hub_score": 0.0,
-      "authority_score": 0.001748612649916928,
+      "hub_score": -1.2212846929673867e-20,
+      "authority_score": 0.0017486126499168268,
       "avg_edge_confidence": 0.7204697132110596,
       "max_edge_confidence": 0.7465999722480774,
       "avg_edge_frequency": 1.303030303030303,
       "total_edge_frequency": 43.0,
       "relation_diversity": 2.0,
-      "influence_score": 0.31721668924473967
+      "influence_score": 0.3172166892447398
     },
     {
       "node": "Fed",
@@ -661,8 +661,8 @@
       "betweenness": 7.474294548079415e-06,
       "pagerank": 0.0007737764996006648,
       "pagerank_unweighted": 0.0007025107018277676,
-      "hub_score": 2.666449771752425e-05,
-      "authority_score": 0.495269839567912,
+      "hub_score": 2.6664497717523446e-05,
+      "authority_score": 0.49526983956791437,
       "avg_edge_confidence": 0.8216687627136707,
       "max_edge_confidence": 0.8500000238418579,
       "avg_edge_frequency": 3.6875,
@@ -683,14 +683,14 @@
       "betweenness": 0.0007708646217115171,
       "pagerank": 0.0014244825431685025,
       "pagerank_unweighted": 0.0010745444046865017,
-      "hub_score": 4.558319158320464e-05,
-      "authority_score": 4.1276939739232265e-06,
+      "hub_score": 4.558319158320517e-05,
+      "authority_score": 4.127693973945331e-06,
       "avg_edge_confidence": 0.7926750009258589,
       "max_edge_confidence": 0.8499000072479248,
       "avg_edge_frequency": 1.4166666666666667,
       "total_edge_frequency": 34.0,
       "relation_diversity": 4.0,
-      "influence_score": 0.2921088615686268
+      "influence_score": 0.2921088615686269
     },
     {
       "node": "Nvidia",
@@ -705,14 +705,14 @@
       "betweenness": 0.001266087003785371,
       "pagerank": 0.0005833363276365551,
       "pagerank_unweighted": 0.0006219927326056414,
-      "hub_score": 0.0011871734374234507,
-      "authority_score": 0.032965531233715456,
+      "hub_score": 0.0011871734374234283,
+      "authority_score": 0.03296553123371558,
       "avg_edge_confidence": 0.6967131580177106,
       "max_edge_confidence": 0.8500000238418579,
       "avg_edge_frequency": 1.2894736842105263,
       "total_edge_frequency": 49.0,
       "relation_diversity": 9.0,
-      "influence_score": 0.2815888070317653
+      "influence_score": 0.2815888070317654
     },
     {
       "node": "Cục An toàn thông tin",
@@ -727,14 +727,14 @@
       "betweenness": 0.00043335753802326444,
       "pagerank": 0.0016211615823220008,
       "pagerank_unweighted": 0.0014863969776812826,
-      "hub_score": 0.0009904125790561225,
-      "authority_score": 0.0002755591560554174,
+      "hub_score": 0.0009904125790561305,
+      "authority_score": 0.0002755591560555255,
       "avg_edge_confidence": 0.7970555557145013,
       "max_edge_confidence": 0.800000011920929,
       "avg_edge_frequency": 2.111111111111111,
       "total_edge_frequency": 38.0,
       "relation_diversity": 1.0,
-      "influence_score": 0.2688507024255798
+      "influence_score": 0.26885070242557996
     },
     {
       "node": "CMC",
@@ -749,14 +749,14 @@
       "betweenness": 0.0011548215139089765,
       "pagerank": 0.0008142400870181324,
       "pagerank_unweighted": 0.0008020322224653416,
-      "hub_score": 6.623162489763887e-05,
-      "authority_score": 0.00047351800993302904,
+      "hub_score": 6.62316248976335e-05,
+      "authority_score": 0.0004735180099330251,
       "avg_edge_confidence": 0.7912750031266894,
       "max_edge_confidence": 0.8500000238418579,
       "avg_edge_frequency": 1.25,
       "total_edge_frequency": 35.0,
       "relation_diversity": 6.0,
-      "influence_score": 0.26604155931445067
+      "influence_score": 0.2660415593144508
     },
     {
       "node": "VPBank",
@@ -771,14 +771,14 @@
       "betweenness": 0.000893876119213385,
       "pagerank": 0.0008373889655180397,
       "pagerank_unweighted": 0.0008518909091731091,
-      "hub_score": 2.2368927322787166e-05,
-      "authority_score": 2.4199001298748566e-06,
+      "hub_score": 2.2368927322785366e-05,
+      "authority_score": 2.4199001298789892e-06,
       "avg_edge_confidence": 0.7154487206385686,
       "max_edge_confidence": 0.8500000238418579,
       "avg_edge_frequency": 1.1538461538461537,
       "total_edge_frequency": 45.0,
       "relation_diversity": 7.0,
-      "influence_score": 0.26144530399616983
+      "influence_score": 0.26144530399616994
     },
     {
       "node": "Mỹ",
@@ -793,14 +793,14 @@
       "betweenness": 0.00023360909777524286,
       "pagerank": 0.0014273120928418323,
       "pagerank_unweighted": 0.0011965193847838123,
-      "hub_score": 4.730264801085897e-06,
-      "authority_score": 0.0007766687352732251,
+      "hub_score": 4.730264801082583e-06,
+      "authority_score": 0.0007766687352732066,
       "avg_edge_confidence": 0.7058810736681964,
       "max_edge_confidence": 0.7599999904632568,
       "avg_edge_frequency": 1.2702702702702702,
       "total_edge_frequency": 47.0,
       "relation_diversity": 5.0,
-      "influence_score": 0.2596353998823887
+      "influence_score": 0.2596353998823888
     },
     {
       "node": "Bộ KH&CN",
@@ -815,14 +815,14 @@
       "betweenness": 0.0007880111475952836,
       "pagerank": 0.001137588863088553,
       "pagerank_unweighted": 0.001039488037674514,
-      "hub_score": 4.425338110012082e-05,
-      "authority_score": 4.211154948050261e-06,
+      "hub_score": 4.425338110012033e-05,
+      "authority_score": 4.211154948060952e-06,
       "avg_edge_confidence": 0.7912095217477708,
       "max_edge_confidence": 0.7998999953269958,
       "avg_edge_frequency": 1.1904761904761905,
       "total_edge_frequency": 25.0,
       "relation_diversity": 3.0,
-      "influence_score": 0.2530230553698776
+      "influence_score": 0.25302305536987774
     },
     {
       "node": "MobiFone",
@@ -837,14 +837,14 @@
       "betweenness": 0.0006432598883598429,
       "pagerank": 0.0011746196141288088,
       "pagerank_unweighted": 0.0011535606450632653,
-      "hub_score": 1.6829812544494e-05,
-      "authority_score": 1.0311610701636629e-05,
+      "hub_score": 1.6829812544494082e-05,
+      "authority_score": 1.031161070162982e-05,
       "avg_edge_confidence": 0.7802916740377744,
       "max_edge_confidence": 0.8500000238418579,
       "avg_edge_frequency": 1.2083333333333333,
       "total_edge_frequency": 29.0,
       "relation_diversity": 5.0,
-      "influence_score": 0.24770222440439654
+      "influence_score": 0.24770222440439665
     },
     {
       "node": "Samsung",
@@ -859,14 +859,14 @@
       "betweenness": 0.001305097915297524,
       "pagerank": 0.00046259647111708524,
       "pagerank_unweighted": 0.0004283915653567834,
-      "hub_score": 0.010814161571552969,
-      "authority_score": 0.0019018975220128577,
+      "hub_score": 0.010814161571552957,
+      "authority_score": 0.0019018975220127625,
       "avg_edge_confidence": 0.7465516078856683,
       "max_edge_confidence": 0.8499000072479248,
       "avg_edge_frequency": 2.096774193548387,
       "total_edge_frequency": 65.0,
       "relation_diversity": 7.0,
-      "influence_score": 0.24518236084234424
+      "influence_score": 0.24518236084234432
     },
     {
       "node": "CMC Telecom",
@@ -881,14 +881,14 @@
       "betweenness": 0.00046130554887232407,
       "pagerank": 0.0012198932379911206,
       "pagerank_unweighted": 0.0011582084453977052,
-      "hub_score": 1.1122964060369893e-05,
-      "authority_score": 0.0002503889370307625,
+      "hub_score": 1.1122964060369237e-05,
+      "authority_score": 0.00025038893703076194,
       "avg_edge_confidence": 0.7964142844790504,
       "max_edge_confidence": 0.8499000072479248,
       "avg_edge_frequency": 1.1428571428571428,
       "total_edge_frequency": 24.0,
       "relation_diversity": 4.0,
-      "influence_score": 0.22817549713294105
+      "influence_score": 0.2281754971329412
     }
   ],
   "top_by_betweenness": [
@@ -905,14 +905,14 @@
       "betweenness": 0.0018634793942780379,
       "pagerank": 0.0026050955729406363,
       "pagerank_unweighted": 0.002876798744008723,
-      "hub_score": 0.00027514403201301394,
-      "authority_score": 4.6506910348763506e-05,
+      "hub_score": 0.00027514403201298304,
+      "authority_score": 4.650691034884029e-05,
       "avg_edge_confidence": 0.752843479660974,
       "max_edge_confidence": 0.8499000072479248,
       "avg_edge_frequency": 1.3768115942028984,
       "total_edge_frequency": 95.0,
       "relation_diversity": 7.0,
-      "influence_score": 0.6394218187990022
+      "influence_score": 0.6394218187990023
     },
     {
       "node": "FPT",
@@ -927,8 +927,8 @@
       "betweenness": 0.0016453159610906615,
       "pagerank": 0.0031114750343618027,
       "pagerank_unweighted": 0.0030670174527961027,
-      "hub_score": 0.0007530089206248012,
-      "authority_score": 0.0001022648267680428,
+      "hub_score": 0.000753008920624779,
+      "authority_score": 0.00010226482676783621,
       "avg_edge_confidence": 0.7747076946300465,
       "max_edge_confidence": 0.8500000238418579,
       "avg_edge_frequency": 1.5164835164835164,
@@ -949,14 +949,14 @@
       "betweenness": 0.0015872143640286761,
       "pagerank": 0.001028640935419838,
       "pagerank_unweighted": 0.0009013127836755094,
-      "hub_score": 0.0025159404356827116,
-      "authority_score": 0.055897661439323114,
+      "hub_score": 0.0025159404356825256,
+      "authority_score": 0.055897661439323336,
       "avg_edge_confidence": 0.7439698617752284,
       "max_edge_confidence": 0.8500000238418579,
       "avg_edge_frequency": 1.9863013698630136,
       "total_edge_frequency": 145.0,
       "relation_diversity": 9.0,
-      "influence_score": 0.4460903773658381
+      "influence_score": 0.4460903773658382
     },
     {
       "node": "Bộ Công an",
@@ -971,14 +971,14 @@
       "betweenness": 0.0014273180503198949,
       "pagerank": 0.0017494336130547824,
       "pagerank_unweighted": 0.001417709511784035,
-      "hub_score": 8.426041117270809e-07,
-      "authority_score": 7.26409457779135e-06,
+      "hub_score": 8.42604111729898e-07,
+      "authority_score": 7.264094577799637e-06,
       "avg_edge_confidence": 0.8009607089417321,
       "max_edge_confidence": 0.8497999906539917,
       "avg_edge_frequency": 1.3571428571428572,
       "total_edge_frequency": 38.0,
       "relation_diversity": 3.0,
-      "influence_score": 0.41005574063468214
+      "influence_score": 0.41005574063468225
     },
     {
       "node": "Google",
@@ -993,14 +993,14 @@
       "betweenness": 0.0014008297549503532,
       "pagerank": 0.001388661619127133,
       "pagerank_unweighted": 0.0015902104881764928,
-      "hub_score": 0.006011578641429938,
-      "authority_score": 0.0003971286321900562,
+      "hub_score": 0.0060115786414299405,
+      "authority_score": 0.0003971286321900237,
       "avg_edge_confidence": 0.792562498152256,
       "max_edge_confidence": 0.8500000238418579,
       "avg_edge_frequency": 1.275,
       "total_edge_frequency": 51.0,
       "relation_diversity": 7.0,
-      "influence_score": 0.38566474857477895
+      "influence_score": 0.385664748574779
     },
     {
       "node": "Samsung",
@@ -1015,14 +1015,14 @@
       "betweenness": 0.001305097915297524,
       "pagerank": 0.00046259647111708524,
       "pagerank_unweighted": 0.0004283915653567834,
-      "hub_score": 0.010814161571552969,
-      "authority_score": 0.0019018975220128577,
+      "hub_score": 0.010814161571552957,
+      "authority_score": 0.0019018975220127625,
       "avg_edge_confidence": 0.7465516078856683,
       "max_edge_confidence": 0.8499000072479248,
       "avg_edge_frequency": 2.096774193548387,
       "total_edge_frequency": 65.0,
       "relation_diversity": 7.0,
-      "influence_score": 0.24518236084234424
+      "influence_score": 0.24518236084234432
     },
     {
       "node": "Nvidia",
@@ -1037,14 +1037,14 @@
       "betweenness": 0.001266087003785371,
       "pagerank": 0.0005833363276365551,
       "pagerank_unweighted": 0.0006219927326056414,
-      "hub_score": 0.0011871734374234507,
-      "authority_score": 0.032965531233715456,
+      "hub_score": 0.0011871734374234283,
+      "authority_score": 0.03296553123371558,
       "avg_edge_confidence": 0.6967131580177106,
       "max_edge_confidence": 0.8500000238418579,
       "avg_edge_frequency": 1.2894736842105263,
       "total_edge_frequency": 49.0,
       "relation_diversity": 9.0,
-      "influence_score": 0.2815888070317653
+      "influence_score": 0.2815888070317654
     },
     {
       "node": "CMC",
@@ -1059,14 +1059,14 @@
       "betweenness": 0.0011548215139089765,
       "pagerank": 0.0008142400870181324,
       "pagerank_unweighted": 0.0008020322224653416,
-      "hub_score": 6.623162489763887e-05,
-      "authority_score": 0.00047351800993302904,
+      "hub_score": 6.62316248976335e-05,
+      "authority_score": 0.0004735180099330251,
       "avg_edge_confidence": 0.7912750031266894,
       "max_edge_confidence": 0.8500000238418579,
       "avg_edge_frequency": 1.25,
       "total_edge_frequency": 35.0,
       "relation_diversity": 6.0,
-      "influence_score": 0.26604155931445067
+      "influence_score": 0.2660415593144508
     },
     {
       "node": "VPBank",
@@ -1081,14 +1081,14 @@
       "betweenness": 0.000893876119213385,
       "pagerank": 0.0008373889655180397,
       "pagerank_unweighted": 0.0008518909091731091,
-      "hub_score": 2.2368927322787166e-05,
-      "authority_score": 2.4199001298748566e-06,
+      "hub_score": 2.2368927322785366e-05,
+      "authority_score": 2.4199001298789892e-06,
       "avg_edge_confidence": 0.7154487206385686,
       "max_edge_confidence": 0.8500000238418579,
       "avg_edge_frequency": 1.1538461538461537,
       "total_edge_frequency": 45.0,
       "relation_diversity": 7.0,
-      "influence_score": 0.26144530399616983
+      "influence_score": 0.26144530399616994
     },
     {
       "node": "Bộ KH&CN",
@@ -1103,14 +1103,14 @@
       "betweenness": 0.0007880111475952836,
       "pagerank": 0.001137588863088553,
       "pagerank_unweighted": 0.001039488037674514,
-      "hub_score": 4.425338110012082e-05,
-      "authority_score": 4.211154948050261e-06,
+      "hub_score": 4.425338110012033e-05,
+      "authority_score": 4.211154948060952e-06,
       "avg_edge_confidence": 0.7912095217477708,
       "max_edge_confidence": 0.7998999953269958,
       "avg_edge_frequency": 1.1904761904761905,
       "total_edge_frequency": 25.0,
       "relation_diversity": 3.0,
-      "influence_score": 0.2530230553698776
+      "influence_score": 0.25302305536987774
     },
     {
       "node": "Việt Nam",
@@ -1125,14 +1125,14 @@
       "betweenness": 0.0007723789283465915,
       "pagerank": 0.0006633141198670662,
       "pagerank_unweighted": 0.000741091400797347,
-      "hub_score": 1.5408872424103695e-05,
-      "authority_score": 0.0003828994756240792,
+      "hub_score": 1.5408872424082116e-05,
+      "authority_score": 0.00038289947562403996,
       "avg_edge_confidence": 0.725228971744252,
       "max_edge_confidence": 0.75,
       "avg_edge_frequency": 1.1869158878504673,
       "total_edge_frequency": 127.0,
       "relation_diversity": 5.0,
-      "influence_score": 0.355463272930417
+      "influence_score": 0.35546327293041713
     },
     {
       "node": "Bộ Tài chính",
@@ -1147,14 +1147,14 @@
       "betweenness": 0.0007708646217115171,
       "pagerank": 0.0014244825431685025,
       "pagerank_unweighted": 0.0010745444046865017,
-      "hub_score": 4.558319158320464e-05,
-      "authority_score": 4.1276939739232265e-06,
+      "hub_score": 4.558319158320517e-05,
+      "authority_score": 4.127693973945331e-06,
       "avg_edge_confidence": 0.7926750009258589,
       "max_edge_confidence": 0.8499000072479248,
       "avg_edge_frequency": 1.4166666666666667,
       "total_edge_frequency": 34.0,
       "relation_diversity": 4.0,
-      "influence_score": 0.2921088615686268
+      "influence_score": 0.2921088615686269
     },
     {
       "node": "Đại học Bách khoa Hà Nội",
@@ -1169,14 +1169,14 @@
       "betweenness": 0.0007523828846567281,
       "pagerank": 0.0007669773203095232,
       "pagerank_unweighted": 0.0006133596222713853,
-      "hub_score": 1.347938943751125e-05,
-      "authority_score": 2.85258738514392e-06,
+      "hub_score": 1.34793894375115e-05,
+      "authority_score": 2.8525873851352965e-06,
       "avg_edge_confidence": 0.8069545409896157,
       "max_edge_confidence": 0.8499000072479248,
       "avg_edge_frequency": 1.6363636363636365,
       "total_edge_frequency": 18.0,
       "relation_diversity": 3.0,
-      "influence_score": 0.1847741848789635
+      "influence_score": 0.1847741848789636
     },
     {
       "node": "MobiFone",
@@ -1191,14 +1191,14 @@
       "betweenness": 0.0006432598883598429,
       "pagerank": 0.0011746196141288088,
       "pagerank_unweighted": 0.0011535606450632653,
-      "hub_score": 1.6829812544494e-05,
-      "authority_score": 1.0311610701636629e-05,
+      "hub_score": 1.6829812544494082e-05,
+      "authority_score": 1.031161070162982e-05,
       "avg_edge_confidence": 0.7802916740377744,
       "max_edge_confidence": 0.8500000238418579,
       "avg_edge_frequency": 1.2083333333333333,
       "total_edge_frequency": 29.0,
       "relation_diversity": 5.0,
-      "influence_score": 0.24770222440439654
+      "influence_score": 0.24770222440439665
     },
     {
       "node": "Zalo",
@@ -1213,14 +1213,14 @@
       "betweenness": 0.0006301841107409565,
       "pagerank": 0.0004247750606774242,
       "pagerank_unweighted": 0.00048431645550218983,
-      "hub_score": 1.1077237308556031e-05,
-      "authority_score": 0.00024760981655550516,
+      "hub_score": 1.1077237308556628e-05,
+      "authority_score": 0.0002476098165555094,
       "avg_edge_confidence": 0.7955444388919406,
       "max_edge_confidence": 0.8482999801635742,
       "avg_edge_frequency": 1.4444444444444444,
       "total_edge_frequency": 13.0,
       "relation_diversity": 4.0,
-      "influence_score": 0.12591990859377192
+      "influence_score": 0.12591990859377206
     },
     {
       "node": "Mastercard",
@@ -1235,14 +1235,14 @@
       "betweenness": 0.0006238404002203068,
       "pagerank": 0.00011003228192539634,
       "pagerank_unweighted": 0.00011894359091697088,
-      "hub_score": 5.1892710597111315e-05,
-      "authority_score": 0.0004398089803281833,
+      "hub_score": 5.1892710597108666e-05,
+      "authority_score": 0.0004398089803281868,
       "avg_edge_confidence": 0.7971999943256378,
       "max_edge_confidence": 0.7998999953269958,
       "avg_edge_frequency": 1.0,
       "total_edge_frequency": 4.0,
       "relation_diversity": 1.0,
-      "influence_score": 0.07719369682294129
+      "influence_score": 0.07719369682294142
     },
     {
       "node": "Ericsson",
@@ -1257,14 +1257,14 @@
       "betweenness": 0.0005430786004599737,
       "pagerank": 0.0002929149939615842,
       "pagerank_unweighted": 0.0003059086879516284,
-      "hub_score": 1.3273034160205574e-06,
-      "authority_score": 1.1275769001587465e-05,
+      "hub_score": 1.3273034160227832e-06,
+      "authority_score": 1.1275769001585352e-05,
       "avg_edge_confidence": 0.8099600076675415,
       "max_edge_confidence": 0.8500000238418579,
       "avg_edge_frequency": 1.0,
       "total_edge_frequency": 5.0,
       "relation_diversity": 2.0,
-      "influence_score": 0.09272001713371948
+      "influence_score": 0.0927200171337196
     },
     {
       "node": "NHNN",
@@ -1279,14 +1279,14 @@
       "betweenness": 0.0005387127729479218,
       "pagerank": 0.00059141005824492,
       "pagerank_unweighted": 0.0006111711241623821,
-      "hub_score": 2.0299501235787887e-06,
-      "authority_score": 2.0197267070866713e-06,
+      "hub_score": 2.029950123576032e-06,
+      "authority_score": 2.019726707085499e-06,
       "avg_edge_confidence": 0.7691964294229235,
       "max_edge_confidence": 0.8500000238418579,
       "avg_edge_frequency": 1.1071428571428572,
       "total_edge_frequency": 31.0,
       "relation_diversity": 6.0,
-      "influence_score": 0.17233574392636308
+      "influence_score": 0.17233574392636322
     },
     {
       "node": "Bộ",
@@ -1301,14 +1301,14 @@
       "betweenness": 0.0005340567094346986,
       "pagerank": 0.0003419580206339063,
       "pagerank_unweighted": 0.00035117728888893235,
-      "hub_score": 4.2488385316328315e-07,
-      "authority_score": 1.867195152892015e-06,
+      "hub_score": 4.2488385316351704e-07,
+      "authority_score": 1.8671951528965031e-06,
       "avg_edge_confidence": 0.8158666690190634,
       "max_edge_confidence": 0.8496000170707703,
       "avg_edge_frequency": 1.0,
       "total_edge_frequency": 6.0,
       "relation_diversity": 2.0,
-      "influence_score": 0.09966322470787349
+      "influence_score": 0.09966322470787362
     },
     {
       "node": "Bộ Nông nghiệp và Môi trường",
@@ -1323,14 +1323,14 @@
       "betweenness": 0.0005283526213004374,
       "pagerank": 0.0007072029810466032,
       "pagerank_unweighted": 0.0007941894305843218,
-      "hub_score": 6.893951627792531e-06,
-      "authority_score": 4.7348444397205443e-07,
+      "hub_score": 6.8939516277929e-06,
+      "authority_score": 4.7348444397720317e-07,
       "avg_edge_confidence": 0.7931727225130255,
       "max_edge_confidence": 0.7998999953269958,
       "avg_edge_frequency": 1.0,
       "total_edge_frequency": 11.0,
       "relation_diversity": 2.0,
-      "influence_score": 0.15338130638167427
+      "influence_score": 0.15338130638167438
     }
   ],
   "top_by_pagerank": [
@@ -1347,14 +1347,14 @@
       "betweenness": 3.9327157538151576e-05,
       "pagerank": 0.003328305214685268,
       "pagerank_unweighted": 0.0032736563067869585,
-      "hub_score": 0.0,
-      "authority_score": 0.001069363330248914,
+      "hub_score": 1.3835069818518974e-19,
+      "authority_score": 0.0010693633302487815,
       "avg_edge_confidence": 0.7179772059122721,
       "max_edge_confidence": 0.75,
       "avg_edge_frequency": 1.1754385964912282,
       "total_edge_frequency": 67.0,
       "relation_diversity": 3.0,
-      "influence_score": 0.5103130388995032
+      "influence_score": 0.5103130388995033
     },
     {
       "node": "FPT",
@@ -1369,8 +1369,8 @@
       "betweenness": 0.0016453159610906615,
       "pagerank": 0.0031114750343618027,
       "pagerank_unweighted": 0.0030670174527961027,
-      "hub_score": 0.0007530089206248012,
-      "authority_score": 0.0001022648267680428,
+      "hub_score": 0.000753008920624779,
+      "authority_score": 0.00010226482676783621,
       "avg_edge_confidence": 0.7747076946300465,
       "max_edge_confidence": 0.8500000238418579,
       "avg_edge_frequency": 1.5164835164835164,
@@ -1391,14 +1391,14 @@
       "betweenness": 0.0018634793942780379,
       "pagerank": 0.0026050955729406363,
       "pagerank_unweighted": 0.002876798744008723,
-      "hub_score": 0.00027514403201301394,
-      "authority_score": 4.6506910348763506e-05,
+      "hub_score": 0.00027514403201298304,
+      "authority_score": 4.650691034884029e-05,
       "avg_edge_confidence": 0.752843479660974,
       "max_edge_confidence": 0.8499000072479248,
       "avg_edge_frequency": 1.3768115942028984,
       "total_edge_frequency": 95.0,
       "relation_diversity": 7.0,
-      "influence_score": 0.6394218187990022
+      "influence_score": 0.6394218187990023
     },
     {
       "node": "công nghệ",
@@ -1413,14 +1413,14 @@
       "betweenness": 9.41742278212442e-06,
       "pagerank": 0.0021496979737553063,
       "pagerank_unweighted": 0.002016728365058455,
-      "hub_score": 0.0,
-      "authority_score": 0.001748612649916928,
+      "hub_score": -1.2212846929673867e-20,
+      "authority_score": 0.0017486126499168268,
       "avg_edge_confidence": 0.7204697132110596,
       "max_edge_confidence": 0.7465999722480774,
       "avg_edge_frequency": 1.303030303030303,
       "total_edge_frequency": 43.0,
       "relation_diversity": 2.0,
-      "influence_score": 0.31721668924473967
+      "influence_score": 0.3172166892447398
     },
     {
       "node": "UBND",
@@ -1435,14 +1435,14 @@
       "betweenness": 0.0004081322685317081,
       "pagerank": 0.0019828821158211153,
       "pagerank_unweighted": 0.002174068661566419,
-      "hub_score": 9.026691124521507e-05,
-      "authority_score": 1.2191499508722124e-05,
+      "hub_score": 9.026691124521204e-05,
+      "authority_score": 1.219149950871338e-05,
       "avg_edge_confidence": 0.8115809531438918,
       "max_edge_confidence": 0.8499000072479248,
       "avg_edge_frequency": 1.1904761904761905,
       "total_edge_frequency": 50.0,
       "relation_diversity": 6.0,
-      "influence_score": 0.3557836858886119
+      "influence_score": 0.35578368588861203
     },
     {
       "node": "465.819 tỷ",
@@ -1458,13 +1458,13 @@
       "pagerank": 0.0019102415174285536,
       "pagerank_unweighted": 0.0017958629798961365,
       "hub_score": 0.0,
-      "authority_score": 0.0,
+      "authority_score": -4.769354206436157e-19,
       "avg_edge_confidence": 0.7465999722480774,
       "max_edge_confidence": 0.7465999722480774,
       "avg_edge_frequency": 1.0,
       "total_edge_frequency": 1.0,
       "relation_diversity": 1.0,
-      "influence_score": 0.22568784705710693
+      "influence_score": 0.22568784705710704
     },
     {
       "node": "Bộ Công an",
@@ -1479,14 +1479,14 @@
       "betweenness": 0.0014273180503198949,
       "pagerank": 0.0017494336130547824,
       "pagerank_unweighted": 0.001417709511784035,
-      "hub_score": 8.426041117270809e-07,
-      "authority_score": 7.26409457779135e-06,
+      "hub_score": 8.42604111729898e-07,
+      "authority_score": 7.264094577799637e-06,
       "avg_edge_confidence": 0.8009607089417321,
       "max_edge_confidence": 0.8497999906539917,
       "avg_edge_frequency": 1.3571428571428572,
       "total_edge_frequency": 38.0,
       "relation_diversity": 3.0,
-      "influence_score": 0.41005574063468214
+      "influence_score": 0.41005574063468225
     },
     {
       "node": "Cục An toàn thông tin",
@@ -1501,14 +1501,14 @@
       "betweenness": 0.00043335753802326444,
       "pagerank": 0.0016211615823220008,
       "pagerank_unweighted": 0.0014863969776812826,
-      "hub_score": 0.0009904125790561225,
-      "authority_score": 0.0002755591560554174,
+      "hub_score": 0.0009904125790561305,
+      "authority_score": 0.0002755591560555255,
       "avg_edge_confidence": 0.7970555557145013,
       "max_edge_confidence": 0.800000011920929,
       "avg_edge_frequency": 2.111111111111111,
       "total_edge_frequency": 38.0,
       "relation_diversity": 1.0,
-      "influence_score": 0.2688507024255798
+      "influence_score": 0.26885070242557996
     },
     {
       "node": "100%",
@@ -1524,13 +1524,13 @@
       "pagerank": 0.0015800158947487642,
       "pagerank_unweighted": 0.0013897689704012444,
       "hub_score": 0.0,
-      "authority_score": 1.3502493191535173e-05,
+      "authority_score": 1.3502493191513586e-05,
       "avg_edge_confidence": 0.7021739130434781,
       "max_edge_confidence": 0.75,
       "avg_edge_frequency": 1.2608695652173914,
       "total_edge_frequency": 29.0,
       "relation_diversity": 2.0,
-      "influence_score": 0.22661052370290605
+      "influence_score": 0.22661052370290616
     },
     {
       "node": "Mỹ",
@@ -1545,14 +1545,14 @@
       "betweenness": 0.00023360909777524286,
       "pagerank": 0.0014273120928418323,
       "pagerank_unweighted": 0.0011965193847838123,
-      "hub_score": 4.730264801085897e-06,
-      "authority_score": 0.0007766687352732251,
+      "hub_score": 4.730264801082583e-06,
+      "authority_score": 0.0007766687352732066,
       "avg_edge_confidence": 0.7058810736681964,
       "max_edge_confidence": 0.7599999904632568,
       "avg_edge_frequency": 1.2702702702702702,
       "total_edge_frequency": 47.0,
       "relation_diversity": 5.0,
-      "influence_score": 0.2596353998823887
+      "influence_score": 0.2596353998823888
     },
     {
       "node": "Bộ Tài chính",
@@ -1567,14 +1567,14 @@
       "betweenness": 0.0007708646217115171,
       "pagerank": 0.0014244825431685025,
       "pagerank_unweighted": 0.0010745444046865017,
-      "hub_score": 4.558319158320464e-05,
-      "authority_score": 4.1276939739232265e-06,
+      "hub_score": 4.558319158320517e-05,
+      "authority_score": 4.127693973945331e-06,
       "avg_edge_confidence": 0.7926750009258589,
       "max_edge_confidence": 0.8499000072479248,
       "avg_edge_frequency": 1.4166666666666667,
       "total_edge_frequency": 34.0,
       "relation_diversity": 4.0,
-      "influence_score": 0.2921088615686268
+      "influence_score": 0.2921088615686269
     },
     {
       "node": "Google",
@@ -1589,14 +1589,14 @@
       "betweenness": 0.0014008297549503532,
       "pagerank": 0.001388661619127133,
       "pagerank_unweighted": 0.0015902104881764928,
-      "hub_score": 0.006011578641429938,
-      "authority_score": 0.0003971286321900562,
+      "hub_score": 0.0060115786414299405,
+      "authority_score": 0.0003971286321900237,
       "avg_edge_confidence": 0.792562498152256,
       "max_edge_confidence": 0.8500000238418579,
       "avg_edge_frequency": 1.275,
       "total_edge_frequency": 51.0,
       "relation_diversity": 7.0,
-      "influence_score": 0.38566474857477895
+      "influence_score": 0.385664748574779
     },
     {
       "node": "10%",
@@ -1612,13 +1612,13 @@
       "pagerank": 0.0012937412847806868,
       "pagerank_unweighted": 0.001289423700975693,
       "hub_score": 0.0,
-      "authority_score": 0.0002892588231549516,
+      "authority_score": 0.00028925882315494273,
       "avg_edge_confidence": 0.6999999999999997,
       "max_edge_confidence": 0.7,
       "avg_edge_frequency": 1.1,
       "total_edge_frequency": 22.0,
       "relation_diversity": 1.0,
-      "influence_score": 0.18587186756324517
+      "influence_score": 0.18587186756324528
     },
     {
       "node": "20%",
@@ -1634,13 +1634,13 @@
       "pagerank": 0.0012660472425568333,
       "pagerank_unweighted": 0.0012894261339281821,
       "hub_score": 0.0,
-      "authority_score": 2.732558104035167e-05,
+      "authority_score": 2.732558104034236e-05,
       "avg_edge_confidence": 0.6991833315955267,
       "max_edge_confidence": 0.7,
       "avg_edge_frequency": 1.0,
       "total_edge_frequency": 18.0,
       "relation_diversity": 1.0,
-      "influence_score": 0.17858828354024073
+      "influence_score": 0.17858828354024084
     },
     {
       "node": "Bộ Công Thương",
@@ -1655,14 +1655,14 @@
       "betweenness": 0.0002878828114420955,
       "pagerank": 0.0012255883657007465,
       "pagerank_unweighted": 0.0012606187039554153,
-      "hub_score": 9.003127355638076e-06,
-      "authority_score": 1.8252079386747186e-06,
+      "hub_score": 9.003127355636909e-06,
+      "authority_score": 1.8252079386777036e-06,
       "avg_edge_confidence": 0.7927624993026257,
       "max_edge_confidence": 0.7998999953269958,
       "avg_edge_frequency": 1.0,
       "total_edge_frequency": 16.0,
       "relation_diversity": 3.0,
-      "influence_score": 0.20072843169847537
+      "influence_score": 0.2007284316984755
     },
     {
       "node": "CMC Telecom",
@@ -1677,14 +1677,14 @@
       "betweenness": 0.00046130554887232407,
       "pagerank": 0.0012198932379911206,
       "pagerank_unweighted": 0.0011582084453977052,
-      "hub_score": 1.1122964060369893e-05,
-      "authority_score": 0.0002503889370307625,
+      "hub_score": 1.1122964060369237e-05,
+      "authority_score": 0.00025038893703076194,
       "avg_edge_confidence": 0.7964142844790504,
       "max_edge_confidence": 0.8499000072479248,
       "avg_edge_frequency": 1.1428571428571428,
       "total_edge_frequency": 24.0,
       "relation_diversity": 4.0,
-      "influence_score": 0.22817549713294105
+      "influence_score": 0.2281754971329412
     },
     {
       "node": "MobiFone",
@@ -1699,14 +1699,14 @@
       "betweenness": 0.0006432598883598429,
       "pagerank": 0.0011746196141288088,
       "pagerank_unweighted": 0.0011535606450632653,
-      "hub_score": 1.6829812544494e-05,
-      "authority_score": 1.0311610701636629e-05,
+      "hub_score": 1.6829812544494082e-05,
+      "authority_score": 1.031161070162982e-05,
       "avg_edge_confidence": 0.7802916740377744,
       "max_edge_confidence": 0.8500000238418579,
       "avg_edge_frequency": 1.2083333333333333,
       "total_edge_frequency": 29.0,
       "relation_diversity": 5.0,
-      "influence_score": 0.24770222440439654
+      "influence_score": 0.24770222440439665
     },
     {
       "node": "NIC",
@@ -1721,14 +1721,14 @@
       "betweenness": 6.968892858772071e-07,
       "pagerank": 0.0011541857911626856,
       "pagerank_unweighted": 0.0011376707550405291,
-      "hub_score": 1.9118435690387076e-09,
-      "authority_score": 0.0,
+      "hub_score": 1.911843568926992e-09,
+      "authority_score": -1.6005755178627096e-18,
       "avg_edge_confidence": 0.7996615308981675,
       "max_edge_confidence": 0.8499000072479248,
       "avg_edge_frequency": 1.0,
       "total_edge_frequency": 13.0,
       "relation_diversity": 3.0,
-      "influence_score": 0.15546777460606293
+      "influence_score": 0.15546777460606304
     },
     {
       "node": "Ngân hàng Nhà nước",
@@ -1743,14 +1743,14 @@
       "betweenness": 0.0001336233634068595,
       "pagerank": 0.0011418606134781311,
       "pagerank_unweighted": 0.0009131199761801799,
-      "hub_score": 1.860045790974909e-06,
-      "authority_score": 7.5730216127836395e-06,
+      "hub_score": 1.8600457909775883e-06,
+      "authority_score": 7.5730216128013035e-06,
       "avg_edge_confidence": 0.799252944834092,
       "max_edge_confidence": 0.8499000072479248,
       "avg_edge_frequency": 1.4705882352941178,
       "total_edge_frequency": 25.0,
       "relation_diversity": 3.0,
-      "influence_score": 0.17576944078640702
+      "influence_score": 0.17576944078640716
     },
     {
       "node": "Bộ KH&CN",
@@ -1765,14 +1765,14 @@
       "betweenness": 0.0007880111475952836,
       "pagerank": 0.001137588863088553,
       "pagerank_unweighted": 0.001039488037674514,
-      "hub_score": 4.425338110012082e-05,
-      "authority_score": 4.211154948050261e-06,
+      "hub_score": 4.425338110012033e-05,
+      "authority_score": 4.211154948060952e-06,
       "avg_edge_confidence": 0.7912095217477708,
       "max_edge_confidence": 0.7998999953269958,
       "avg_edge_frequency": 1.1904761904761905,
       "total_edge_frequency": 25.0,
       "relation_diversity": 3.0,
-      "influence_score": 0.2530230553698776
+      "influence_score": 0.25302305536987774
     }
   ]
 }

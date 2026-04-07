@@ -1,19 +1,18 @@
-"""
-FastAPI entry point — NER Knowledge Graph Extractor
-Chạy: python server/main.py   hoặc   npm run server
+﻿"""
+FastAPI entry point - NER Knowledge Graph Extractor
+Run: python server/main.py or npm run server
 
-Cải tiến #4: Rate limiting + validation
-  - SlowAPI rate limiter: /extract giới hạn 10 req/phút mỗi IP.
-  - MAX_UPLOAD_BYTES: từ chối file PDF vượt 20MB trước khi đọc vào RAM.
-  - /upload-pdf trả về 413 nếu file quá lớn.
-  - Custom exception handler trả JSON đúng format thay vì HTML mặc định.
+Improvements:
+  - SlowAPI rate limiter: /extract limited to 10 req/min per IP.
+  - MAX_UPLOAD_BYTES: reject PDF larger than 20MB before loading into RAM.
+  - /upload-pdf returns 413 if file is too large.
+  - Custom exception handler returns JSON instead of default HTML.
 """
 
 import logging
 
 from fastapi import FastAPI, HTTPException, Request, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
@@ -25,17 +24,22 @@ from knowledge_base import load_kb
 from ner import run_ner
 from graph import build_graph, predict_new_links
 from metrics import compute_graph_metrics
+from insights import compute_insight_report
 from schemas import (
-    ExtractRequest, GraphData,
-    PredictLinksRequest, PredictLinksResponse,
-    MetricsRequest, MetricsResponse,
+    ExtractRequest,
+    GraphData,
+    PredictLinksRequest,
+    PredictLinksResponse,
+    MetricsRequest,
+    MetricsResponse,
+    InsightRequest,
+    InsightResponse,
     MAX_PDF_TEXT_LENGTH,
 )
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# ── Rate limiter ───────────────────────────────────────────────────────────────
 limiter = Limiter(key_func=get_remote_address, default_limits=["60/minute"])
 
 app = FastAPI(title="KGE NER API", version="1.1.0")
@@ -49,11 +53,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Giới hạn kích thước file PDF upload (bytes)
 MAX_UPLOAD_BYTES = 20 * 1024 * 1024  # 20 MB
 
-
-# ── Routes ─────────────────────────────────────────────────────────────────────
 
 @app.get("/health")
 def health():
@@ -70,9 +71,9 @@ def health():
 @limiter.limit("10/minute")
 def extract(request: Request, req: ExtractRequest):
     """
-    Trích xuất Knowledge Graph từ văn bản.
-    Rate limit: 10 request/phút mỗi IP.
-    Input: tối đa 50,000 ký tự (cấu hình trong schemas.py).
+    Extract a knowledge graph from text.
+    Rate limit: 10 requests/minute per IP.
+    Input: up to 50,000 characters.
     """
     _require_model()
     return build_graph(run_ner(req.text), req.text)
@@ -82,15 +83,13 @@ def extract(request: Request, req: ExtractRequest):
 @limiter.limit("5/minute")
 async def upload_pdf(request: Request, file: UploadFile = File(...)):
     """
-    Đọc file PDF, trả về văn bản đã trích xuất.
-    Rate limit: 5 request/phút mỗi IP.
-    Giới hạn kích thước: 20MB.
+    Read a PDF file and return extracted text.
+    Rate limit: 5 requests/minute per IP.
+    File size limit: 20MB.
     """
     if not file.filename or not file.filename.lower().endswith(".pdf"):
-        raise HTTPException(400, detail="Chỉ hỗ trợ file PDF (.pdf)")
+        raise HTTPException(400, detail="Only PDF files are supported (.pdf)")
 
-    # Kiểm tra kích thước trước khi đọc toàn bộ vào RAM
-    # Content-Length header có thể vắng mặt nên đọc từng chunk
     chunks: list[bytes] = []
     total_bytes = 0
     async for chunk in file:
@@ -99,9 +98,8 @@ async def upload_pdf(request: Request, file: UploadFile = File(...)):
             raise HTTPException(
                 413,
                 detail=(
-                    f"File vượt quá kích thước tối đa "
-                    f"({MAX_UPLOAD_BYTES // (1024*1024)} MB). "
-                    "Vui lòng upload file nhỏ hơn."
+                    f"File exceeds maximum size ({MAX_UPLOAD_BYTES // (1024 * 1024)} MB). "
+                    "Please upload a smaller file."
                 ),
             )
         chunks.append(chunk)
@@ -113,18 +111,18 @@ async def upload_pdf(request: Request, file: UploadFile = File(...)):
         import io
 
         reader = PdfReader(io.BytesIO(data))
-        pages  = [p.extract_text().strip() for p in reader.pages if p.extract_text()]
+        pages = [p.extract_text().strip() for p in reader.pages if p.extract_text()]
 
         if not pages:
-            raise HTTPException(422, detail="Không trích xuất được văn bản. File có thể là PDF scan.")
+            raise HTTPException(422, detail="Could not extract text. The file may be a scanned PDF.")
 
         full_text = "\n\n".join(pages)
-
-        # Cắt bớt nếu vượt giới hạn text trích xuất
         if len(full_text) > MAX_PDF_TEXT_LENGTH:
             logger.warning(
-                "PDF '%s' extracted text truncated: %d → %d chars",
-                file.filename, len(full_text), MAX_PDF_TEXT_LENGTH,
+                "PDF '%s' extracted text truncated: %d -> %d chars",
+                file.filename,
+                len(full_text),
+                MAX_PDF_TEXT_LENGTH,
             )
             full_text = full_text[:MAX_PDF_TEXT_LENGTH]
 
@@ -138,7 +136,7 @@ async def upload_pdf(request: Request, file: UploadFile = File(...)):
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(500, detail=f"Lỗi đọc PDF: {e}")
+        raise HTTPException(500, detail=f"PDF read error: {e}")
 
 
 @app.post("/predict-links", response_model=PredictLinksResponse)
@@ -151,58 +149,69 @@ def predict_links(request: Request, req: PredictLinksRequest):
 @app.post("/metrics", response_model=MetricsResponse)
 @limiter.limit("20/minute")
 def metrics(request: Request, req: MetricsRequest):
-    """Tính graph metrics từ dữ liệu entities/relations hiện tại."""
+    """Compute graph metrics from current entities/relations."""
     try:
         return compute_graph_metrics(GraphData(entities=req.entities, relations=req.relations))
     except RuntimeError as e:
         raise HTTPException(500, detail=str(e))
     except Exception as e:
-        raise HTTPException(500, detail=f"Lỗi tính graph metrics: {e}")
+        raise HTTPException(500, detail=f"Graph metrics error: {e}")
+
+
+@app.post("/insight", response_model=InsightResponse)
+@limiter.limit("20/minute")
+def insight(request: Request, req: InsightRequest):
+    """Generate markdown insight from the current graph using backend analysis."""
+    try:
+        return compute_insight_report(
+            GraphData(entities=req.entities, relations=req.relations),
+            req.input_text,
+        )
+    except RuntimeError as e:
+        raise HTTPException(500, detail=str(e))
+    except Exception as e:
+        raise HTTPException(500, detail=f"Insight generation error: {e}")
 
 
 @app.get("/kb/stats")
 def kb_stats():
-    """Thống kê Knowledge Base."""
+    """Knowledge base statistics."""
     return kb.get_stats()
 
 
 @app.get("/kb/search")
 @limiter.limit("30/minute")
 def kb_search(request: Request, q: str, limit: int = 20):
-    """Tìm kiếm entity trong Knowledge Base."""
+    """Search entities in the knowledge base."""
     if not kb.kb_ready:
-        raise HTTPException(503, detail="Knowledge Base chưa sẵn sàng.")
+        raise HTTPException(503, detail="Knowledge base is not ready.")
     if not q.strip():
-        raise HTTPException(400, detail="Query không được để trống.")
+        raise HTTPException(400, detail="Query must not be empty.")
     return {"query": q, "results": kb.search_entities(q, limit=limit)}
 
 
 @app.get("/kb/entity")
 def kb_entity(name: str, limit: int = 50):
-    """Lấy tất cả triples liên quan đến một entity."""
+    """Get triples related to an entity."""
     if not kb.kb_ready:
-        raise HTTPException(503, detail="Knowledge Base chưa sẵn sàng.")
+        raise HTTPException(503, detail="Knowledge base is not ready.")
     triples = kb.get_entity_triples(name, limit=limit)
     return {"entity": name, "total": len(triples), "triples": triples}
 
-
-# ── Helpers ────────────────────────────────────────────────────────────────────
 
 def _require_model():
     if not model_state.model_ready:
         raise HTTPException(
             503,
-            detail=f"Model chưa sẵn sàng. {model_state.model_error or 'Đang tải...'}",
+            detail=f"Model is not ready. {model_state.model_error or 'Loading...'}",
         )
 
-
-# ── Startup ────────────────────────────────────────────────────────────────────
 
 @app.on_event("startup")
 async def startup_event():
     import asyncio
+
     loop = asyncio.get_event_loop()
-    # Load NER model và Knowledge Base song song
     await asyncio.gather(
         loop.run_in_executor(None, load_model),
         loop.run_in_executor(None, load_kb),
@@ -211,4 +220,5 @@ async def startup_event():
 
 if __name__ == "__main__":
     import uvicorn
+
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=False)

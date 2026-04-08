@@ -1,19 +1,13 @@
+﻿"""
+Pydantic schemas - request/response models for FastAPI.
 """
-Pydantic schemas — request/response models cho FastAPI.
 
-Cải tiến #4: Thêm validation cho ExtractRequest
-  - max_length trên trường text để tránh crash server với input 100MB.
-  - Field(...) với constraints thay vì BaseModel trống.
-"""
+from typing import Any
 
 from pydantic import BaseModel, Field, field_validator
 
-
-# ── Giới hạn độ dài text đầu vào ──────────────────────────────────────────────
-# PhoBERT xử lý ~400 từ/giây; 50_000 ký tự ≈ 8_000 từ ≈ ~20 giây → hợp lý.
-# Thay đổi hằng số này nếu server có tài nguyên cao hơn.
-MAX_TEXT_LENGTH   = 50_000  # ký tự
-MAX_PDF_TEXT_LENGTH = 200_000  # PDF nhiều trang cho phép dài hơn
+MAX_TEXT_LENGTH = 50_000
+MAX_PDF_TEXT_LENGTH = 200_000
 
 
 class ExtractRequest(BaseModel):
@@ -21,10 +15,7 @@ class ExtractRequest(BaseModel):
         ...,
         min_length=1,
         max_length=MAX_TEXT_LENGTH,
-        description=(
-            f"Văn bản cần trích xuất entity. "
-            f"Tối đa {MAX_TEXT_LENGTH:,} ký tự."
-        ),
+        description=f"Input text for entity extraction. Max {MAX_TEXT_LENGTH:,} characters.",
     )
     use_deep_analysis: bool = False
 
@@ -32,7 +23,7 @@ class ExtractRequest(BaseModel):
     @classmethod
     def text_must_not_be_blank(cls, v: str) -> str:
         if not v.strip():
-            raise ValueError("text không được chỉ chứa khoảng trắng.")
+            raise ValueError("text must not be blank.")
         return v
 
 
@@ -101,3 +92,14 @@ class MetricsResponse(BaseModel):
     top_degree: list[NodeMetrics]
     top_pagerank: list[NodeMetrics]
     top_betweenness: list[NodeMetrics]
+
+
+class InsightRequest(BaseModel):
+    entities: list[Entity] = Field(..., max_length=500)
+    relations: list[Relation] = Field(..., max_length=5000)
+    input_text: str = Field(default="", max_length=MAX_TEXT_LENGTH)
+
+
+class InsightResponse(BaseModel):
+    insight_markdown: str
+    report: dict[str, Any]

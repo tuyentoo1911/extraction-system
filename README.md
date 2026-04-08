@@ -6,6 +6,8 @@ Stack chính:
 - **Frontend**: React + Vite + TypeScript
 - **Backend**: FastAPI (Python)
 - **Mô hình NER**: PhoBERT (VinAI)
+- **Chat memory**: PostgreSQL
+- **LLM (tuỳ chọn)**: OpenAI / Gemini (fallback rule-based khi không cấu hình)
 
 ---
 
@@ -17,6 +19,7 @@ Stack chính:
 - Tính graph metrics (degree, pagerank, betweenness, ...) (`/metrics`)
 - Tra cứu Knowledge Base cục bộ (`/kb/*`)
 - Dashboard trực quan: Graph, Entities, Relations, Insight, Chatbot, Metrics, Highlight
+- **Chatbot hỏi đáp** với memory hội thoại bền vững (PostgreSQL), hỗ trợ multi-turn, hybrid rule-based + LLM
 
 ---
 
@@ -27,7 +30,9 @@ React Frontend (Vite, :3000)
         ↕ HTTP
 FastAPI Backend (Python, :8000)
         ↕
-PhoBERT NER + Knowledge Base + Metrics
+PhoBERT NER + Knowledge Base + Metrics + ChatService
+        ↕
+PostgreSQL (chat memory)   +   LLM Provider (tuỳ chọn)
 ```
 
 ---
@@ -47,7 +52,11 @@ PhoBERT NER + Knowledge Base + Metrics
 │  ├─ graph.py                  # Build graph + predict links
 │  ├─ metrics.py                # Tính metrics đồ thị
 │  ├─ knowledge_base.py         # KB load/search
-│  └─ schemas.py                # Pydantic schemas
+│  ├─ schemas.py                # Pydantic schemas
+│  ├─ chat_service.py           # Hybrid chat orchestrator
+│  ├─ chat_memory.py            # PostgreSQL chat memory CRUD
+│  ├─ llm_client.py             # LLM provider adapter (OpenAI/Gemini)
+│  └─ sql/chat_memory.sql       # Schema migration cho chat tables
 ├─ model/                       # Trọng số model + dữ liệu hỗ trợ
 ├─ feature_engineering_output/  # Artifacts huấn luyện/đánh giá
 └─ README.md
@@ -60,6 +69,7 @@ PhoBERT NER + Knowledge Base + Metrics
 - Node.js 18+ (khuyến nghị 20+)
 - Python 3.11+
 - Pip
+- PostgreSQL 14+ (dùng cho chat memory)
 
 > Lưu ý: lần chạy đầu backend có thể mất thời gian do tải tokenizer/model.
 
@@ -77,7 +87,32 @@ npm install
 
 ```bash
 pip install torch --index-url https://download.pytorch.org/whl/cpu
-pip install fastapi uvicorn transformers scikit-learn joblib pypdf networkx
+pip install -r requirements.txt
+```
+
+### 5.3 Chuẩn bị PostgreSQL
+
+Tạo database và chạy migration:
+
+```bash
+createdb kge
+psql kge -f server/sql/chat_memory.sql
+```
+
+Đặt `DATABASE_URL` trong file `.env` (copy từ `.env.example`):
+
+```env
+DATABASE_URL="postgresql://user:password@localhost:5432/kge"
+```
+
+### 5.4 (Tuỳ chọn) Cấu hình LLM
+
+Để chatbot dùng LLM thay vì rule-based, thêm vào `.env`:
+
+```env
+LLM_PROVIDER="gemini"        # hoặc "openai"
+LLM_API_KEY="your-api-key"
+LLM_MODEL=""                 # để trống = dùng default (gemini-2.0-flash / gpt-4o-mini)
 ```
 
 ---
@@ -119,6 +154,7 @@ Frontend chạy ở `http://localhost:3000`.
 | `/upload-pdf` | POST | Upload file PDF, trả text đã bóc tách |
 | `/predict-links` | POST | Dự đoán quan hệ mới |
 | `/metrics` | POST | Tính chỉ số đồ thị |
+| `/chat` | POST | Chatbot hỏi đáp (hybrid rule-based + LLM, có memory) |
 | `/kb/stats` | GET | Thống kê knowledge base |
 | `/kb/search` | GET | Tìm kiếm entity trong KB |
 | `/kb/entity` | GET | Lấy triples theo entity |
@@ -131,6 +167,20 @@ Frontend chạy ở `http://localhost:3000`.
   "use_deep_analysis": false
 }
 ```
+
+### Ví dụ request `/chat`
+
+```json
+{
+  "session_id": null,
+  "message": "Cho tôi biết về Vingroup",
+  "entities": [{"id": "e1", "name": "Vingroup", "type": "Organization"}],
+  "relations": [],
+  "input_text": "Vingroup đầu tư vào VinFast."
+}
+```
+
+Response trả về `session_id` để dùng cho các lượt hỏi tiếp theo.
 
 ---
 
@@ -151,25 +201,31 @@ Frontend chạy ở `http://localhost:3000`.
 File mẫu: `.env.example`
 
 ```env
-API_KEY="YOUR_API_KEY_HERE"
-APP_URL="MY_APP_URL"
+DATABASE_URL="postgresql://user:password@localhost:5432/kge"
+LLM_PROVIDER=""     # "openai" hoặc "gemini" (để trống = rule-based)
+LLM_API_KEY=""
+LLM_MODEL=""
 ```
 
-Hiện tại các chức năng cốt lõi hoạt động không bắt buộc API key. Biến môi trường dùng khi bạn mở rộng tích hợp LLM/provider ngoài.
+- `DATABASE_URL` **bắt buộc** cho chat memory (PostgreSQL).
+- `LLM_PROVIDER` + `LLM_API_KEY` tuỳ chọn — khi không cấu hình, chatbot tự động dùng chế độ rule-based.
 
 ---
 
-## 10) Mở rộng tích hợp AI
+## 10) Chatbot & tích hợp AI
 
-Điểm mở rộng chính nằm ở `src/lib/ai.ts`:
+Chatbot hoạt động theo kiến trúc **hybrid**:
 
-- `callExtract`: gọi backend NER
-- `callPredictLinks`: gọi backend dự đoán quan hệ
-- `callMetrics`: gọi backend metrics
-- `callInsight`: hiện là rule-based local
-- `callChat`: hiện là rule-based local
+1. **Rule-based** (mặc định): trả lời dựa trên entity/relation matching, không cần API key.
+2. **LLM mode**: khi cấu hình `LLM_PROVIDER` + `LLM_API_KEY`, chatbot gọi LLM với graph context và memory hội thoại.
+3. **Fallback**: nếu LLM timeout hoặc lỗi, tự động chuyển sang rule-based.
 
-Bạn có thể thay `callInsight` và `callChat` bằng OpenAI/Gemini/Ollama tùy nhu cầu.
+Memory hội thoại lưu bền vững trong PostgreSQL theo `session_id`. Frontend persist session qua `localStorage`, có nút "Reset" để bắt đầu hội thoại mới.
+
+Điểm mở rộng chính:
+
+- `server/llm_client.py`: thêm provider mới (Anthropic, Ollama, ...) bằng cách thêm hàm `_call_<provider>`.
+- `server/chat_service.py`: tuỳ chỉnh system prompt, context builder, hoặc rule-based logic.
 
 ---
 
@@ -184,11 +240,18 @@ Bạn có thể thay `callInsight` và `callChat` bằng OpenAI/Gemini/Ollama t�
 - **Upload PDF lỗi**
   - Chỉ hỗ trợ `.pdf`
   - PDF scan ảnh thuần có thể không trích xuất text được
+- **Chat không lưu lịch sử**
+  - Kiểm tra `DATABASE_URL` đúng và PostgreSQL đang chạy
+  - Chạy migration: `psql $DATABASE_URL -f server/sql/chat_memory.sql`
+- **LLM không phản hồi**
+  - Kiểm tra `LLM_PROVIDER`, `LLM_API_KEY` trong `.env`
+  - Chat sẽ tự fallback sang rule-based nếu LLM lỗi
 
 ---
 
 ## 12) Gợi ý cải thiện tiếp
 
-- Thêm Docker Compose cho frontend + backend
+- Thêm Docker Compose cho frontend + backend + PostgreSQL
 - Bổ sung test API (`pytest`) và test frontend
 - Chuẩn hóa script đa nền tảng (Windows/Linux/macOS)
+- Thêm provider LLM mới (Anthropic, Ollama local, ...)

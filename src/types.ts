@@ -54,4 +54,11 @@ export type ChatMessage = {
   content: string;
 };
 
+export interface ChatApiResponse {
+  session_id: string;
+  reply: string;
+  engine: 'llm' | 'rule-based';
+  history: ChatMessage[];
+}
+
 export type TabId = 'graph' | 'entities' | 'relations' | 'highlight' | 'metrics' | 'insight' | 'chatbot' | 'json';

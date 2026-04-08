@@ -27,3 +27,26 @@ body {
   font-weight: 700;
   letter-spacing: -0.02em;
 }
+
+.prose table {
+  font-family: var(--font-sans);
+  font-size: 0.8125rem;
+  border-collapse: collapse;
+  width: 100%;
+}
+
+.prose th,
+.prose td {
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  padding: 0.4rem 0.75rem;
+  text-align: left;
+}
+
+.prose th {
+  background-color: rgba(0, 0, 0, 0.04);
+  font-weight: 600;
+}
+
+.prose tr:hover td {
+  background-color: rgba(0, 0, 0, 0.02);
+}

@@ -1,0 +1,973 @@
+"""
+Hybrid chat service: memory + graph context + KB enrichment + LLM / rule-based fallback.
+
+Rule-based engine supports 15+ intent types (Vietnamese + English):
+  - Entity lookup (fuzzy)       - Count / statistics
+  - Type listing                - Relation listing & filtering
+  - Relationship path (A→B)     - Neighbors / connections
+  - Comparison (A vs B)         - Top / most-connected nodes
+  - Graph summary / overview    - KB deep lookup
+  - Relation type search        - Predicted links info
+  - Help / capabilities         - Greeting
+  - Source text excerpt
+"""
+
+from __future__ import annotations
+
+import re
+import logging
+from collections import Counter, defaultdict
+from difflib import SequenceMatcher
+from typing import Optional
+
+import chat_memory as mem
+import llm_client
+import knowledge_base as kb
+import rag as rag_mod
+from schemas import (
+    ChatRequest,
+    ChatResponse,
+    ChatTurn,
+    Entity,
+    Relation,
+)
+
+logger = logging.getLogger(__name__)
+
+_MAX_CONTEXT_ENTITIES = 30
+_MAX_CONTEXT_RELATIONS = 60
+_MAX_HISTORY_FOR_LLM = 20
+
+_SYSTEM_PROMPT = """\
+You are a knowledge-graph assistant for a Vietnamese NER application.
+Answer in the same language the user uses (Vietnamese or English).
+
+You have access to RETRIEVED CONTEXT from a RAG pipeline that includes:
+- Relevant passages from the source document
+- Entity information from the extracted knowledge graph
+- Relations between entities
+- Facts from the Knowledge Base corpus (6000+ triples)
+
+RULES:
+- Ground your answers ONLY in the retrieved context — do not fabricate information.
+- Cite specific entities, relations, or source excerpts when answering.
+- If the context is insufficient, say so honestly and suggest what the user could ask instead.
+- Keep answers concise and use Markdown formatting.
+"""
+
+
+def init_chat_db() -> None:
+    """Called once at server startup."""
+    try:
+        mem.init_pool()
+    except Exception:
+        logger.warning("Chat memory DB not available — chat will still work without persistence.", exc_info=True)
+
+
+# ── Public entry point ───────────────────────────────────────────
+
+async def handle_chat(req: ChatRequest) -> ChatResponse:
+    session_id = _safe_ensure_session(req.session_id)
+
+    _safe_add_message(session_id, "user", req.message)
+
+    history_rows = _safe_get_history(session_id)
+
+    rag_context = rag_mod.retrieve_context(
+        req.message, req.input_text, req.entities, req.relations,
+    )
+
+    engine = "rule-based"
+    reply: Optional[str] = None
+
+    if llm_client.is_configured():
+        try:
+            reply = await _call_llm(history_rows, rag_context)
+            engine = "llm"
+        except Exception:
+            logger.warning("LLM call failed, falling back to rule-based.", exc_info=True)
+
+    if reply is None:
+        reply = _rule_based_reply(
+            req.message, req.entities, req.relations, req.input_text,
+        )
+
+    _safe_add_message(session_id, "model", reply)
+
+    recent = _safe_get_history(session_id, limit=20)
+    turns = [ChatTurn(role=r["role"], content=r["content"]) for r in recent]
+
+    return ChatResponse(
+        session_id=session_id,
+        reply=reply,
+        engine=engine,
+        history=turns,
+    )
+
+
+# ── Memory helpers (graceful degradation) ────────────────────────
+
+_memory_available = True
+
+
+def _safe_ensure_session(session_id: Optional[str]) -> str:
+    global _memory_available
+    if not _memory_available:
+        return session_id or "ephemeral"
+    try:
+        return mem.ensure_session(session_id)
+    except Exception:
+        logger.warning("Memory unavailable; using ephemeral session.", exc_info=True)
+        _memory_available = False
+        return session_id or "ephemeral"
+
+
+def _safe_add_message(session_id: str, role: str, content: str) -> None:
+    if not _memory_available:
+        return
+    try:
+        mem.add_message(session_id, role, content)
+    except Exception:
+        logger.warning("Failed to persist chat message.", exc_info=True)
+
+
+def _safe_get_history(session_id: str, limit: int = 50) -> list[dict]:
+    if not _memory_available:
+        return []
+    try:
+        return mem.get_recent_messages(session_id, limit=limit)
+    except Exception:
+        logger.warning("Failed to load chat history.", exc_info=True)
+        return []
+
+
+# ── Graph context builder ────────────────────────────────────────
+
+def _build_graph_context(
+    question: str,
+    entities: list[Entity],
+    relations: list[Relation],
+) -> str:
+    if not entities:
+        return "(No graph data provided.)"
+
+    q_lower = question.lower()
+    entity_map = {e.id: e for e in entities}
+
+    scored: list[tuple[Entity, float]] = []
+    for e in entities:
+        score = 0.0
+        if e.name.lower() in q_lower:
+            score += 10.0
+        for alias in getattr(e, "aliases", []):
+            if alias.lower() in q_lower:
+                score += 5.0
+        scored.append((e, score))
+
+    scored.sort(key=lambda x: x[1], reverse=True)
+    top_entities = scored[:_MAX_CONTEXT_ENTITIES]
+    top_ids = {e.id for e, _ in top_entities}
+
+    relevant_rels = [
+        r for r in relations
+        if r.source in top_ids or r.target in top_ids
+    ][:_MAX_CONTEXT_RELATIONS]
+
+    lines = ["### Graph Context", ""]
+    lines.append(f"**Entities ({len(top_entities)}/{len(entities)}):**")
+    for e, _ in top_entities:
+        props = ""
+        if e.properties:
+            props = " | " + ", ".join(f"{p.key}={p.value}" for p in e.properties[:5])
+        lines.append(f"- {e.name} [{e.type}]{props}")
+
+    lines.append("")
+    lines.append(f"**Relations ({len(relevant_rels)}/{len(relations)}):**")
+
+    def _name(eid: str) -> str:
+        ent = entity_map.get(eid)
+        return ent.name if ent else eid
+
+    for r in relevant_rels:
+        lines.append(f"- {_name(r.source)} --[{r.label}]--> {_name(r.target)}")
+
+    return "\n".join(lines)
+
+
+# ── LLM call ─────────────────────────────────────────────────────
+
+async def _call_llm(history: list[dict], graph_context: str) -> str:
+    system = _SYSTEM_PROMPT + "\n\n" + graph_context
+
+    msgs: list[dict[str, str]] = []
+    for row in history[-_MAX_HISTORY_FOR_LLM:]:
+        msgs.append({"role": row["role"], "content": row["content"]})
+
+    return await llm_client.generate(system, msgs)
+
+
+# ═════════════════════════════════════════════════════════════════
+# §  RULE-BASED ENGINE  (expanded — 15+ intent types)
+# ═════════════════════════════════════════════════════════════════
+
+_FUZZY_THRESHOLD = 0.50
+
+_VIET_DIACRITICS = str.maketrans(
+    "àáảãạăắằẳẵặâấầẩẫậèéẻẽẹêếềểễệìíỉĩịòóỏõọôốồổỗộơớờởỡợùúủũụưứừửữựỳýỷỹỵđ"
+    "ÀÁẢÃẠĂẮẰẲẴẶÂẤẦẨẪẬÈÉẺẼẸÊẾỀỂỄỆÌÍỈĨỊÒÓỎÕỌÔỐỒỔỖỘƠỚỜỞỠỢÙÚỦŨỤƯỨỪỬỮỰỲÝỶỸỴĐ",
+    "aaaaaaaaaaaaaaaaaeeeeeeeeeeeiiiiiooooooooooooooooouuuuuuuuuuuyyyyyd"
+    "AAAAAAAAAAAAAAAAAEEEEEEEEEEEIIIIIOOOOOOOOOOOOOOOOOUUUUUUUUUUUYYYYYD",
+)
+
+
+def _strip_diacritics(s: str) -> str:
+    return s.translate(_VIET_DIACRITICS)
+
+
+def _fuzzy_find_entity(
+    query: str, entities: list[Entity],
+) -> Optional[Entity]:
+    """Find best matching entity using exact → substring → diacritics-stripped → fuzzy."""
+    q = query.lower().strip()
+
+    for e in entities:
+        if e.name.lower() == q:
+            return e
+
+    for e in entities:
+        if e.name.lower() in q or q in e.name.lower():
+            return e
+
+    q_ascii = _strip_diacritics(q)
+    for e in entities:
+        if _strip_diacritics(e.name.lower()) == q_ascii:
+            return e
+    for e in entities:
+        if q_ascii in _strip_diacritics(e.name.lower()) or _strip_diacritics(e.name.lower()) in q_ascii:
+            return e
+
+    best, best_ratio = None, 0.0
+    for e in entities:
+        r1 = SequenceMatcher(None, q, e.name.lower()).ratio()
+        r2 = SequenceMatcher(None, q_ascii, _strip_diacritics(e.name.lower())).ratio()
+        ratio = max(r1, r2)
+        if ratio > best_ratio:
+            best, best_ratio = e, ratio
+    return best if best_ratio >= _FUZZY_THRESHOLD else None
+
+
+def _fuzzy_find_entities_multi(
+    query: str, entities: list[Entity],
+) -> list[Entity]:
+    """Find all entities mentioned in query."""
+    q = query.lower()
+    found: list[Entity] = []
+    for e in entities:
+        if e.name.lower() in q:
+            found.append(e)
+    return found
+
+
+def _name(eid: str, entity_map: dict[str, Entity]) -> str:
+    ent = entity_map.get(eid)
+    return ent.name if ent else eid
+
+
+def _degree_map(entities: list[Entity], relations: list[Relation]) -> dict[str, int]:
+    deg: dict[str, int] = defaultdict(int)
+    for e in entities:
+        deg[e.id] = 0
+    for r in relations:
+        deg[r.source] += 1
+        deg[r.target] += 1
+    return deg
+
+
+def _entity_rels(eid: str, relations: list[Relation]) -> list[Relation]:
+    return [r for r in relations if r.source == eid or r.target == eid]
+
+
+def _format_entity_card(
+    e: Entity, relations: list[Relation], entity_map: dict[str, Entity],
+) -> str:
+    rels = _entity_rels(e.id, relations)
+    props = (
+        "\n".join(f"- **{p.key}**: {p.value}" for p in e.properties)
+        if e.properties else "_Không có thuộc tính_"
+    )
+
+    outgoing = [r for r in rels if r.source == e.id]
+    incoming = [r for r in rels if r.target == e.id]
+
+    rel_lines: list[str] = []
+    for r in outgoing:
+        rel_lines.append(f"- → *{r.label}* → **{_name(r.target, entity_map)}**")
+    for r in incoming:
+        rel_lines.append(f"- ← *{r.label}* ← **{_name(r.source, entity_map)}**")
+    rel_text = "\n".join(rel_lines) if rel_lines else "_Chưa có quan hệ_"
+
+    return (
+        f"## {e.name} ({e.type})\n\n"
+        f"**Thuộc tính:**\n{props}\n\n"
+        f"**Quan hệ ({len(rels)}):**\n{rel_text}"
+    )
+
+
+def _rule_based_reply(
+    user_message: str,
+    entities: list[Entity],
+    relations: list[Relation],
+    input_text: str = "",
+) -> str:
+    q = user_message.lower().strip()
+    entity_map = {e.id: e for e in entities}
+
+    if not entities and not relations:
+        return (
+            "Đồ thị hiện tại chưa có dữ liệu. "
+            "Vui lòng nhập văn bản và nhấn **Trích xuất** trước khi hỏi đáp."
+        )
+
+    # ── 1. Greeting ──────────────────────────────────────────────
+    greetings = {"xin chào", "chào", "hello", "hi", "hey", "xin chao"}
+    if q in greetings or any(q.startswith(g) for g in greetings):
+        top3 = sorted(entities, key=lambda e: len(_entity_rels(e.id, relations)), reverse=True)[:3]
+        names = ", ".join(f"**{e.name}**" for e in top3)
+        return (
+            f"Xin chào! Đồ thị hiện có **{len(entities)}** thực thể và **{len(relations)}** quan hệ.\n\n"
+            f"Các thực thể nổi bật: {names}\n\n"
+            "Bạn có thể hỏi:\n"
+            '- "Cho tôi biết về [tên]"\n'
+            '- "Mối quan hệ giữa A và B"\n'
+            '- "Thực thể quan trọng nhất"\n'
+            '- "Tóm tắt đồ thị"'
+        )
+
+    # ── 2a. KB lookup (before help, so "KB biết gì" isn't caught by help_kw) ──
+    kb_patterns = [
+        r"(?:kb|knowledge\s*base)\s+(?:biết gì|nói gì|cho biết|search|lookup|tra cứu)\s+(?:về\s+)?(.+?)(?:\?|$)",
+        r"(?:tra cứu|tìm|search)\s+(?:trong\s+)?(?:kb|knowledge\s*base|cơ sở tri thức)\s+(.+?)(?:\?|$)",
+        r"(?:cơ sở tri thức|knowledge base)\s+(?:biết gì|nói gì)\s+(?:về\s+)?(.+?)(?:\?|$)",
+    ]
+    for pat in kb_patterns:
+        m = re.search(pat, q, re.IGNORECASE)
+        if m:
+            return _intent_kb_lookup(m.group(1).strip())
+
+    # ── 2. Help / capabilities ───────────────────────────────────
+    help_kw = {"help", "giúp", "hướng dẫn", "trợ giúp", "hỏi gì", "hỏi được gì",
+               "biết gì", "làm gì", "chức năng", "capability", "what can"}
+    if any(kw in q for kw in help_kw):
+        return (
+            "## Tôi có thể trả lời\n\n"
+            "| Dạng câu hỏi | Ví dụ |\n"
+            "|---|---|\n"
+            '| Thông tin thực thể | "Cho tôi biết về Vingroup" |\n'
+            '| Đếm / thống kê | "Có bao nhiêu tổ chức?" |\n'
+            '| Danh sách theo loại | "Liệt kê người", "Danh sách sự kiện" |\n'
+            '| Quan hệ giữa A và B | "Mối quan hệ giữa Vingroup và VinFast" |\n'
+            '| Các kết nối của X | "Vingroup kết nối với gì?" |\n'
+            '| So sánh A và B | "So sánh Vingroup và FPT" |\n'
+            '| Thực thể quan trọng nhất | "Node quan trọng nhất", "Top 5" |\n'
+            '| Lọc quan hệ theo loại | "Những ai đầu tư?", "Quan hệ hợp tác" |\n'
+            '| Tóm tắt đồ thị | "Tóm tắt", "Tổng quan" |\n'
+            '| Quan hệ dự đoán | "Có quan hệ dự đoán nào?" |\n'
+            '| Tra cứu Knowledge Base | "KB biết gì về Hà Nội?" |\n'
+            '| Trích đoạn văn bản gốc | "Văn bản gốc nói gì về X?" |\n'
+        )
+
+    # ── 3. Graph summary / overview ──────────────────────────────
+    summary_kw = {"tóm tắt", "tổng quan", "overview", "summary", "summar",
+                  "mô tả đồ thị", "describe graph", "describe the graph"}
+    if any(kw in q for kw in summary_kw):
+        return _intent_summary(entities, relations)
+
+    # ── 4. Relationship path between two entities ────────────────
+    _question_words = {"gì", "ai", "đâu", "nào", "sao", "những gì", "cái gì", "thế nào", "như thế nào"}
+    path_patterns = [
+        r"(?:mối\s+)?quan\s+hệ\s+(?:giữa|của)\s+(.+?)\s+và\s+(.+?)(?:\?|$)",
+        r"(?:mối\s+)?liên\s+(?:hệ|quan)\s+(?:giữa|của)\s+(.+?)\s+và\s+(.+?)(?:\?|$)",
+        r"(.+?)\s+(?:liên quan|kết nối|quan hệ)\s+(?:gì|thế nào|như thế nào)?\s*(?:với|đến|tới)\s+(.+?)(?:\?|$)",
+        r"relationship\s+between\s+(.+?)\s+and\s+(.+?)(?:\?|$)",
+        r"how\s+(?:is|are)\s+(.+?)\s+(?:related|connected)\s+to\s+(.+?)(?:\?|$)",
+    ]
+    for pat in path_patterns:
+        m = re.search(pat, q, re.IGNORECASE)
+        if m:
+            a, b = m.group(1).strip(), m.group(2).strip()
+            if a.lower() in _question_words or b.lower() in _question_words:
+                break
+            return _intent_path(a, b, entities, relations, entity_map)
+
+    # ── 5. Compare two entities ──────────────────────────────────
+    compare_patterns = [
+        r"so\s+sánh\s+(.+?)\s+và\s+(.+?)(?:\?|$)",
+        r"compare\s+(.+?)\s+(?:and|with|vs\.?)\s+(.+?)(?:\?|$)",
+        r"(.+?)\s+vs\.?\s+(.+?)(?:\?|$)",
+    ]
+    for pat in compare_patterns:
+        m = re.search(pat, q, re.IGNORECASE)
+        if m:
+            return _intent_compare(m.group(1).strip(), m.group(2).strip(), entities, relations, entity_map)
+
+    # ── 6. Neighbors / connections of entity ─────────────────────
+    neighbor_triggers = [
+        "kết nối với", "liên quan với", "liên quan đến", "liên quan tới",
+        "kết nối gì", "liên quan gì", "quan hệ gì", "quan hệ với",
+        "kết nối với gì", "kết nối với ai", "kết nối với đâu",
+        "connected to", "linked to", "neighbors of",
+        "các kết nối của", "kết nối của",
+    ]
+    if any(kw in q for kw in neighbor_triggers):
+        for e in sorted(entities, key=lambda x: len(x.name), reverse=True):
+            if e.name.lower() in q:
+                return _intent_neighbors(e.name, entities, relations, entity_map)
+        # regex: extract the noun before/after the trigger
+        neighbor_patterns = [
+            r"(?:các\s+)?(?:kết nối|liên quan|quan hệ)\s+(?:của\s+)?(.+?)(?:\?|$)",
+            r"(.+?)\s+(?:kết nối|liên quan|quan hệ)\s+(?:với\s+)?(?:gì|những gì|ai|cái gì|đâu)",
+            r"(?:connections?|neighbors?|linked)\s+(?:of|to|with)\s+(.+?)(?:\?|$)",
+            r"what\s+is\s+connected\s+to\s+(.+?)(?:\?|$)",
+        ]
+        for pat in neighbor_patterns:
+            m = re.search(pat, q, re.IGNORECASE)
+            if m:
+                candidate = m.group(1).strip().rstrip("?.,!")
+                entity = _fuzzy_find_entity(candidate, entities)
+                if entity:
+                    return _intent_neighbors(entity.name, entities, relations, entity_map)
+
+    # ── 7. Top / most important / most connected ─────────────────
+    top_kw = {"quan trọng nhất", "nổi bật nhất", "top", "most important",
+              "most connected", "nhiều kết nối nhất", "node chính",
+              "thực thể chính", "hub", "trung tâm"}
+    if any(kw in q for kw in top_kw):
+        n = 5
+        m = re.search(r"top\s*(\d+)", q)
+        if m:
+            n = min(int(m.group(1)), 20)
+        return _intent_top_nodes(n, entities, relations, entity_map)
+
+    # ── 8. Predicted relations ───────────────────────────────────
+    predict_kw = {"dự đoán", "predicted", "predict", "dự báo", "gợi ý quan hệ"}
+    if any(kw in q for kw in predict_kw):
+        return _intent_predicted(relations, entity_map)
+
+    # ── 9. Relation type filtering ───────────────────────────────
+    rel_filter_patterns = [
+        r"(?:quan hệ|relation|liên kết)\s+(?:loại\s+)?(.+?)(?:\?|$)",
+        r"(?:những\s+)?(?:ai|gì)\s+(đầu tư|hợp tác|làm việc|sáng lập|cung cấp|cạnh tranh|thành lập)",
+        r"(?:liệt kê|list)\s+(?:các\s+)?(?:quan hệ|relation)\s+(.+?)(?:\?|$)",
+    ]
+    for pat in rel_filter_patterns:
+        m = re.search(pat, q, re.IGNORECASE)
+        if m:
+            label_q = m.group(1).strip()
+            result = _intent_relation_filter(label_q, relations, entity_map)
+            if result:
+                return result
+
+    # ── 10. (KB lookup handled above in §2a) ────────────────────
+
+    # ── 11. Source text excerpt ───────────────────────────────────
+    src_kw = {"văn bản gốc", "source text", "nguyên văn", "trích đoạn",
+              "original text", "input text", "text gốc", "đoạn văn"}
+    if any(kw in q for kw in src_kw):
+        return _intent_source_text(q, input_text, entities)
+
+    # ── 12. Count / statistics ───────────────────────────────────
+    count_kw = {"bao nhiêu", "how many", "count", "total", "tổng",
+                "đếm", "số lượng", "thống kê", "statistics", "stats"}
+    if any(kw in q for kw in count_kw):
+        return _intent_count(q, entities, relations)
+
+    # ── 13. Type listing ─────────────────────────────────────────
+    type_keywords: dict[str, list[str]] = {
+        "Person":       ["person", "người", "nhân vật", "ai", "who"],
+        "Organization": ["organization", "company", "tổ chức", "công ty", "doanh nghiệp"],
+        "Location":     ["location", "place", "địa điểm", "thành phố", "quốc gia", "đâu", "where", "nơi"],
+        "Product":      ["product", "sản phẩm"],
+        "Event":        ["event", "sự kiện"],
+        "Money":        ["money", "tiền", "doanh thu", "giá trị", "vốn"],
+        "Date":         ["date", "time", "ngày", "năm", "thời gian", "khi nào", "when"],
+        "Industry":     ["industry", "ngành", "lĩnh vực", "sector"],
+        "Percent":      ["percent", "phần trăm", "tỷ lệ"],
+    }
+    for etype, keywords in type_keywords.items():
+        if any(kw in q for kw in keywords):
+            match = _intent_type_listing(etype, q, entities, relations, entity_map)
+            if match:
+                return match
+
+    # ── 14. Relation listing (general) ───────────────────────────
+    rel_kw = {"relation", "link", "quan hệ", "liên kết", "kết nối",
+              "mối quan hệ", "edge", "connection", "cạnh"}
+    if any(kw in q for kw in rel_kw):
+        return _intent_relations_list(relations, entity_map)
+
+    # ── 15. Entity lookup (fuzzy — catch-all) ────────────────────
+    matched = _fuzzy_find_entity(q, entities)
+    if matched:
+        card = _format_entity_card(matched, relations, entity_map)
+        kb_extra = _kb_enrich_entity(matched.name)
+        return card + kb_extra
+
+    # ── 16. Multi-entity mention ─────────────────────────────────
+    multi = _fuzzy_find_entities_multi(q, entities)
+    if len(multi) >= 2:
+        parts = []
+        for e in multi[:5]:
+            parts.append(_format_entity_card(e, relations, entity_map))
+        return "\n\n---\n\n".join(parts)
+    if len(multi) == 1:
+        card = _format_entity_card(multi[0], relations, entity_map)
+        kb_extra = _kb_enrich_entity(multi[0].name)
+        return card + kb_extra
+
+    # ── 17. RAG-enhanced fallback ────────────────────────────────
+    rag_docs = rag_mod.retrieve_for_rule_based(
+        user_message, input_text, entities, relations, top_k=5,
+    )
+    if rag_docs:
+        return _intent_rag_fallback(user_message, rag_docs, entities, relations, entity_map)
+
+    # ── 18. Final fallback ────────────────────────────────────────
+    return _intent_smart_fallback(q, entities, relations, entity_map)
+
+
+# ═════════════════════════════════════════════════════════════════
+# §  INTENT IMPLEMENTATIONS
+# ═════════════════════════════════════════════════════════════════
+
+def _intent_summary(entities: list[Entity], relations: list[Relation]) -> str:
+    type_counts = Counter(e.type for e in entities)
+    rel_label_counts = Counter(r.label for r in relations)
+    predicted = sum(1 for r in relations if r.isPredicted)
+
+    type_table = "\n".join(
+        f"| {t} | {c} |" for t, c in type_counts.most_common()
+    )
+    rel_table = "\n".join(
+        f"| {l} | {c} |" for l, c in rel_label_counts.most_common(10)
+    )
+
+    deg = _degree_map(entities, relations)
+    top3 = sorted(deg.items(), key=lambda x: x[1], reverse=True)[:3]
+    entity_map = {e.id: e for e in entities}
+    top3_text = ", ".join(f"**{_name(eid, entity_map)}** ({d} kết nối)" for eid, d in top3)
+
+    return (
+        f"## Tổng quan đồ thị\n\n"
+        f"- **{len(entities)}** thực thể, **{len(relations)}** quan hệ"
+        f"{f' (trong đó {predicted} dự đoán)' if predicted else ''}\n"
+        f"- **{len(type_counts)}** loại thực thể, **{len(rel_label_counts)}** loại quan hệ\n\n"
+        f"### Phân bố loại thực thể\n"
+        f"| Loại | Số lượng |\n|---|---|\n{type_table}\n\n"
+        f"### Top quan hệ phổ biến\n"
+        f"| Nhãn | Số lượng |\n|---|---|\n{rel_table}\n\n"
+        f"### Thực thể trung tâm\n{top3_text}"
+    )
+
+
+def _intent_path(
+    name_a: str, name_b: str,
+    entities: list[Entity], relations: list[Relation],
+    entity_map: dict[str, Entity],
+) -> str:
+    ea = _fuzzy_find_entity(name_a, entities)
+    eb = _fuzzy_find_entity(name_b, entities)
+    if not ea:
+        return f"Không tìm thấy thực thể nào khớp với **{name_a}** trong đồ thị."
+    if not eb:
+        return f"Không tìm thấy thực thể nào khớp với **{name_b}** trong đồ thị."
+
+    direct = []
+    for r in relations:
+        if (r.source == ea.id and r.target == eb.id):
+            direct.append(f"- **{ea.name}** → *{r.label}* → **{eb.name}**")
+        elif (r.source == eb.id and r.target == ea.id):
+            direct.append(f"- **{eb.name}** → *{r.label}* → **{ea.name}**")
+
+    if direct:
+        return (
+            f"## Quan hệ trực tiếp giữa {ea.name} và {eb.name}\n\n"
+            + "\n".join(direct)
+        )
+
+    # 2-hop path
+    a_neighbors = {r.target if r.source == ea.id else r.source: r for r in relations if r.source == ea.id or r.target == ea.id}
+    b_neighbors = {r.target if r.source == eb.id else r.source: r for r in relations if r.source == eb.id or r.target == eb.id}
+    common = set(a_neighbors.keys()) & set(b_neighbors.keys())
+
+    if common:
+        paths = []
+        for mid_id in list(common)[:5]:
+            mid_name = _name(mid_id, entity_map)
+            ra = a_neighbors[mid_id]
+            rb = b_neighbors[mid_id]
+            paths.append(f"- **{ea.name}** →*{ra.label}*→ **{mid_name}** →*{rb.label}*→ **{eb.name}**")
+        return (
+            f"## Đường đi gián tiếp giữa {ea.name} và {eb.name}\n\n"
+            f"Không có quan hệ trực tiếp, nhưng liên kết qua:\n\n"
+            + "\n".join(paths)
+        )
+
+    kb_rel = kb.find_relation(ea.name, eb.name) if kb.kb_ready else None
+    if kb_rel:
+        return (
+            f"## {ea.name} & {eb.name}\n\n"
+            f"Không có quan hệ trong đồ thị hiện tại, nhưng **Knowledge Base** ghi nhận:\n\n"
+            f"- **{ea.name}** → *{kb_rel}* → **{eb.name}**"
+        )
+
+    return (
+        f"Không tìm thấy quan hệ trực tiếp hoặc gián tiếp giữa "
+        f"**{ea.name}** và **{eb.name}** trong đồ thị hiện tại."
+    )
+
+
+def _intent_compare(
+    name_a: str, name_b: str,
+    entities: list[Entity], relations: list[Relation],
+    entity_map: dict[str, Entity],
+) -> str:
+    ea = _fuzzy_find_entity(name_a, entities)
+    eb = _fuzzy_find_entity(name_b, entities)
+    if not ea:
+        return f"Không tìm thấy thực thể **{name_a}**."
+    if not eb:
+        return f"Không tìm thấy thực thể **{name_b}**."
+
+    rels_a = _entity_rels(ea.id, relations)
+    rels_b = _entity_rels(eb.id, relations)
+
+    neighbors_a = {r.target if r.source == ea.id else r.source for r in rels_a}
+    neighbors_b = {r.target if r.source == eb.id else r.source for r in rels_b}
+    common = neighbors_a & neighbors_b
+
+    props_a = "\n".join(f"  - {p.key}: {p.value}" for p in (ea.properties or [])) or "  _Không có_"
+    props_b = "\n".join(f"  - {p.key}: {p.value}" for p in (eb.properties or [])) or "  _Không có_"
+
+    common_names = ", ".join(f"**{_name(c, entity_map)}**" for c in list(common)[:8])
+    common_text = common_names if common else "_Không có_"
+
+    return (
+        f"## So sánh {ea.name} vs {eb.name}\n\n"
+        f"| | **{ea.name}** | **{eb.name}** |\n"
+        f"|---|---|---|\n"
+        f"| Loại | {ea.type} | {eb.type} |\n"
+        f"| Số quan hệ | {len(rels_a)} | {len(rels_b)} |\n"
+        f"| Số kết nối | {len(neighbors_a)} | {len(neighbors_b)} |\n\n"
+        f"**Thuộc tính {ea.name}:**\n{props_a}\n\n"
+        f"**Thuộc tính {eb.name}:**\n{props_b}\n\n"
+        f"**Thực thể chung ({len(common)}):** {common_text}"
+    )
+
+
+def _intent_neighbors(
+    name: str,
+    entities: list[Entity], relations: list[Relation],
+    entity_map: dict[str, Entity],
+) -> str:
+    e = _fuzzy_find_entity(name, entities)
+    if not e:
+        return f"Không tìm thấy thực thể nào khớp với **{name}**."
+
+    rels = _entity_rels(e.id, relations)
+    if not rels:
+        return f"**{e.name}** hiện không có kết nối nào trong đồ thị."
+
+    outgoing = [r for r in rels if r.source == e.id]
+    incoming = [r for r in rels if r.target == e.id]
+
+    lines = [f"## Các kết nối của {e.name} ({len(rels)} quan hệ)\n"]
+    if outgoing:
+        lines.append(f"**Đi ra ({len(outgoing)}):**")
+        for r in outgoing:
+            lines.append(f"- → *{r.label}* → **{_name(r.target, entity_map)}**")
+    if incoming:
+        lines.append(f"\n**Đi vào ({len(incoming)}):**")
+        for r in incoming:
+            lines.append(f"- ← *{r.label}* ← **{_name(r.source, entity_map)}**")
+
+    return "\n".join(lines)
+
+
+def _intent_top_nodes(
+    n: int,
+    entities: list[Entity], relations: list[Relation],
+    entity_map: dict[str, Entity],
+) -> str:
+    deg = _degree_map(entities, relations)
+    ranked = sorted(deg.items(), key=lambda x: x[1], reverse=True)[:n]
+    rows = "\n".join(
+        f"| {i+1} | **{_name(eid, entity_map)}** | {entity_map[eid].type if eid in entity_map else '?'} | {d} |"
+        for i, (eid, d) in enumerate(ranked)
+    )
+    return (
+        f"## Top {n} thực thể quan trọng nhất\n\n"
+        f"| # | Tên | Loại | Số kết nối |\n|---|---|---|---|\n{rows}"
+    )
+
+
+def _intent_predicted(relations: list[Relation], entity_map: dict[str, Entity]) -> str:
+    predicted = [r for r in relations if r.isPredicted]
+    if not predicted:
+        return "Hiện tại không có quan hệ dự đoán nào trong đồ thị. Thử nhấn **Dự đoán liên kết** trên dashboard."
+
+    rows = "\n".join(
+        f"- **{_name(r.source, entity_map)}** → *{r.label}* → **{_name(r.target, entity_map)}**"
+        for r in predicted[:15]
+    )
+    return (
+        f"## Quan hệ dự đoán ({len(predicted)})\n\n{rows}"
+        + (f"\n\n_... và {len(predicted) - 15} quan hệ khác._" if len(predicted) > 15 else "")
+    )
+
+
+def _intent_relation_filter(
+    label_query: str,
+    relations: list[Relation],
+    entity_map: dict[str, Entity],
+) -> Optional[str]:
+    lq = label_query.lower().strip()
+    matched = [
+        r for r in relations
+        if lq in r.label.lower() or SequenceMatcher(None, lq, r.label.lower().replace("_", " ")).ratio() > 0.5
+    ]
+    if not matched:
+        return None
+
+    label_groups: dict[str, list[Relation]] = defaultdict(list)
+    for r in matched:
+        label_groups[r.label].append(r)
+
+    lines = [f"## Quan hệ khớp \"{label_query}\" ({len(matched)} kết quả)\n"]
+    for label, rels in label_groups.items():
+        lines.append(f"### {label} ({len(rels)})")
+        for r in rels[:10]:
+            lines.append(f"- **{_name(r.source, entity_map)}** → **{_name(r.target, entity_map)}**")
+        if len(rels) > 10:
+            lines.append(f"_... và {len(rels) - 10} quan hệ khác_")
+
+    return "\n".join(lines)
+
+
+def _intent_kb_lookup(query: str) -> str:
+    if not kb.kb_ready:
+        return "Knowledge Base chưa sẵn sàng."
+
+    triples = kb.get_entity_triples(query, limit=15)
+    if not triples:
+        results = kb.search_entities(query, limit=5)
+        if results:
+            listing = "\n".join(
+                f"- **{r['name']}** ({r['type']}) — {r['triple_count']} triples"
+                for r in results
+            )
+            return (
+                f"Không tìm chính xác **{query}**, nhưng KB có các entity gần đúng:\n\n{listing}\n\n"
+                f"Thử hỏi lại với tên chính xác hơn."
+            )
+        return f"Knowledge Base không có thông tin về **{query}**."
+
+    lines = [f"## Knowledge Base: {query} ({len(triples)} triples)\n"]
+    for t in triples:
+        conf = t.get("confidence", 0)
+        lines.append(
+            f"- **{t['subject']}** → *{t['relation']}* → **{t['object']}** "
+            f"({conf:.0%})"
+        )
+    return "\n".join(lines)
+
+
+def _intent_source_text(
+    q: str, input_text: str, entities: list[Entity],
+) -> str:
+    if not input_text:
+        return "Không có văn bản gốc trong phiên hiện tại."
+
+    mentioned = _fuzzy_find_entities_multi(q, entities)
+    if mentioned:
+        excerpts = []
+        sentences = re.split(r'[.!?\n]+', input_text)
+        for e in mentioned[:3]:
+            for sent in sentences:
+                if e.name.lower() in sent.lower() and len(sent.strip()) > 10:
+                    excerpts.append(f"- ...{sent.strip()}...")
+                    break
+        if excerpts:
+            names = ", ".join(f"**{e.name}**" for e in mentioned[:3])
+            return f"## Trích đoạn về {names}\n\n" + "\n".join(excerpts)
+
+    preview = input_text[:500]
+    if len(input_text) > 500:
+        preview += "..."
+    return f"## Văn bản gốc (trích)\n\n> {preview}"
+
+
+def _intent_count(
+    q: str, entities: list[Entity], relations: list[Relation],
+) -> str:
+    type_counts = Counter(e.type for e in entities)
+    rel_counts = Counter(r.label for r in relations)
+    predicted = sum(1 for r in relations if r.isPredicted)
+
+    type_table = "\n".join(f"| {t} | {c} |" for t, c in type_counts.most_common())
+    rel_table = "\n".join(f"| {l} | {c} |" for l, c in rel_counts.most_common(8))
+
+    return (
+        f"## Thống kê đồ thị\n\n"
+        f"- **{len(entities)}** thực thể\n"
+        f"- **{len(relations)}** quan hệ"
+        f"{f' (trong đó {predicted} dự đoán)' if predicted else ''}\n\n"
+        f"### Theo loại thực thể\n"
+        f"| Loại | Số lượng |\n|---|---|\n{type_table}\n\n"
+        f"### Theo loại quan hệ\n"
+        f"| Nhãn | Số lượng |\n|---|---|\n{rel_table}"
+    )
+
+
+def _intent_type_listing(
+    etype: str, q: str,
+    entities: list[Entity], relations: list[Relation],
+    entity_map: dict[str, Entity],
+) -> Optional[str]:
+    filtered = [e for e in entities if e.type == etype]
+    if not filtered:
+        return None
+
+    deg = _degree_map(entities, relations)
+    filtered.sort(key=lambda e: deg.get(e.id, 0), reverse=True)
+
+    rows: list[str] = []
+    for e in filtered[:20]:
+        d = deg.get(e.id, 0)
+        rows.append(f"| **{e.name}** | {d} kết nối |")
+
+    return (
+        f"## Danh sách {etype} ({len(filtered)})\n\n"
+        f"| Tên | Kết nối |\n|---|---|\n"
+        + "\n".join(rows)
+        + (f"\n\n_... và {len(filtered) - 20} thực thể khác._" if len(filtered) > 20 else "")
+    )
+
+
+def _intent_relations_list(
+    relations: list[Relation],
+    entity_map: dict[str, Entity],
+) -> str:
+    label_counts = Counter(r.label for r in relations)
+    lines = [f"## Tất cả quan hệ ({len(relations)})\n"]
+    lines.append(f"### Phân bố theo loại ({len(label_counts)} loại)\n")
+    for label, cnt in label_counts.most_common():
+        lines.append(f"- **{label}**: {cnt}")
+
+    lines.append(f"\n### Danh sách chi tiết (tối đa 20)\n")
+    for r in relations[:20]:
+        pred = " _(dự đoán)_" if r.isPredicted else ""
+        lines.append(
+            f"- **{_name(r.source, entity_map)}** → *{r.label}* → "
+            f"**{_name(r.target, entity_map)}**{pred}"
+        )
+    if len(relations) > 20:
+        lines.append(f"\n_... và {len(relations) - 20} quan hệ khác._")
+
+    return "\n".join(lines)
+
+
+def _kb_enrich_entity(name: str) -> str:
+    """Append KB triples if available."""
+    if not kb.kb_ready:
+        return ""
+    triples = kb.get_entity_triples(name, limit=8)
+    if not triples:
+        return ""
+    lines = ["\n\n---\n### Thông tin thêm từ Knowledge Base\n"]
+    for t in triples:
+        lines.append(f"- **{t['subject']}** → *{t['relation']}* → **{t['object']}**")
+    return "\n".join(lines)
+
+
+def _intent_rag_fallback(
+    question: str,
+    docs: list[rag_mod.Document],
+    entities: list[Entity],
+    relations: list[Relation],
+    entity_map: dict[str, Entity],
+) -> str:
+    """Build an answer from RAG-retrieved documents when no specific intent matched."""
+    lines: list[str] = []
+    lines.append(f"Dựa trên dữ liệu liên quan tìm được cho câu hỏi **\"{question}\"**:\n")
+
+    text_chunks = [d for d in docs if d.source == "input_text"]
+    entity_docs = [d for d in docs if d.source == "entity"]
+    rel_docs = [d for d in docs if d.source == "relation"]
+    kb_docs = [d for d in docs if d.source == "kb_triple"]
+
+    if text_chunks:
+        lines.append("📄 **Đoạn văn bản liên quan:**")
+        for d in text_chunks[:3]:
+            lines.append(f"> {d.text[:300]}")
+        lines.append("")
+
+    if entity_docs:
+        lines.append("🔍 **Thực thể liên quan:**")
+        for d in entity_docs[:3]:
+            name = d.metadata.get("entity_name", "?")
+            etype = d.metadata.get("entity_type", "")
+            lines.append(f"- **{name}** ({etype}): {d.text[:200]}")
+        lines.append("")
+
+    if rel_docs:
+        lines.append("🔗 **Quan hệ liên quan:**")
+        for d in rel_docs[:4]:
+            lines.append(f"- {d.text}")
+        lines.append("")
+
+    if kb_docs:
+        lines.append("📚 **Từ Knowledge Base:**")
+        for d in kb_docs[:3]:
+            lines.append(f"- {d.text}")
+        lines.append("")
+
+    if not any([text_chunks, entity_docs, rel_docs, kb_docs]):
+        return _intent_smart_fallback(question.lower(), entities, relations, entity_map)
+
+    lines.append(" _Hãy hỏi cụ thể hơn để tôi trả lời chính xác hơn._")
+    return "\n".join(lines)
+
+
+def _intent_smart_fallback(
+    q: str,
+    entities: list[Entity], relations: list[Relation],
+    entity_map: dict[str, Entity],
+) -> str:
+    """When no intent matches, try KB search then give helpful suggestions."""
+    if kb.kb_ready:
+        words = [w for w in q.split() if len(w) > 2]
+        for word in words:
+            results = kb.search_entities(word, limit=3)
+            if results:
+                listing = "\n".join(
+                    f"- **{r['name']}** ({r['type']})"
+                    for r in results
+                )
+                return (
+                    f"Tôi không chắc bạn đang hỏi về gì, nhưng tìm thấy trong Knowledge Base:\n\n"
+                    f"{listing}\n\n"
+                    f"Hãy thử: _\"Cho tôi biết về {results[0]['name']}\"_ hoặc "
+                    f"_\"KB biết gì về {results[0]['name']}\"_"
+                )
+
+    top3 = sorted(entities, key=lambda e: len(_entity_rels(e.id, relations)), reverse=True)[:3]
+    suggestions = "\n".join(f'- "Cho tôi biết về {e.name}"' for e in top3)
+
+    return (
+        f"Tôi chưa hiểu câu hỏi này. Đồ thị hiện có **{len(entities)}** thực thể "
+        f"và **{len(relations)}** quan hệ.\n\n"
+        f"Thử hỏi:\n{suggestions}\n"
+        '- "Tóm tắt đồ thị"\n'
+        '- "Thực thể quan trọng nhất"\n'
+        '- "Giúp" (xem tất cả dạng câu hỏi)\n'
+    )

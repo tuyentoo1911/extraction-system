@@ -595,7 +595,7 @@ def _is_camelcase_of(alias: str, primary: str) -> bool:
     import unicodedata
     p_unaccent = unicodedata.normalize('NFD', primary.lower()).encode('ascii', 'ignore').decode('utf-8')
     matches = sum(1 for p in camel_parts if p in primary.lower() or p in p_unaccent)
-    return matches >= len(camel_parts)
+    return matches >= max(2, len(camel_parts) - 1)
 
 
 def _resolve_aliases(entities: list[Entity], text: str) -> list[Entity]:
@@ -606,7 +606,13 @@ def _resolve_aliases(entities: list[Entity], text: str) -> list[Entity]:
         full = _norm(m.group(1))
         al = _norm(m.group(2))
         if 2 <= len(al) < len(full):
-            alias_map[al.lower()] = full.lower()
+            best_ename = None
+            for e in entities:
+                if e.name.lower() in full.lower():
+                    if best_ename is None or len(e.name) > len(best_ename):
+                        best_ename = e.name
+            target = best_ename.lower() if best_ename else full.lower()
+            alias_map[al.lower()] = target
 
     # 2. Org-org: CHỈ merge qua CamelCase rõ ràng (không dùng word-subset vì merge sai)
     orgs      = [e for e in entities if e.type == "Organization"]
@@ -800,7 +806,7 @@ def build_graph(raw_entities: list[dict], text: str) -> GraphData:
         gtype = TYPE_MAP.get(raw["ner_type"])
         if gtype is None:
             continue
-        name = _norm(raw["text"].strip().strip(".,;:!?\"'"))
+        name = _norm(raw["text"].strip().strip(".,;:!?\"'()"))
         if not _is_informative(name, gtype):
             continue
         if kb.kb_ready and len(name) >= 3:

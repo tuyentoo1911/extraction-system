@@ -3,7 +3,7 @@
 // Backend: server/main.py (FastAPI on port 8000)
 // ============================================================
 
-import type { ChatMessage, Entity, GraphData, MetricsData, Relation } from '../types';
+import type { ChatApiResponse, ChatMessage, Entity, GraphData, MetricsData, Relation } from '../types';
 
 const API_BASE_CANDIDATES = ['http://localhost:8000', 'http://localhost:8001'];
 let resolvedApiBase: string | null = null;
@@ -133,60 +133,29 @@ export async function callInsight(
 }
 
 export async function callChat(
-  messages: ChatMessage[],
+  sessionId: string | null,
   userMessage: string,
   data: GraphData,
-  _inputText: string
-): Promise<string> {
-  const q = userMessage.toLowerCase();
-  const { entities, relations } = data;
+  inputText: string,
+): Promise<ChatApiResponse> {
+  const apiBase = await resolveApiBase();
 
-  const getEntityName = (id: string) => entities.find(e => e.id === id)?.name || id;
+  const res = await fetch(`${apiBase}/chat`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      session_id: sessionId,
+      message: userMessage,
+      entities: data.entities,
+      relations: data.relations,
+      input_text: inputText,
+    }),
+  });
 
-  const matchedEntity = entities.find(e => q.includes(e.name.toLowerCase()));
-
-  if (matchedEntity) {
-    const rels = relations.filter(r => r.source === matchedEntity.id || r.target === matchedEntity.id);
-    const propText = matchedEntity.properties?.length
-      ? matchedEntity.properties.map(p => `- **${p.key}**: ${p.value}`).join('\n')
-      : '_No properties_';
-    const relText = rels.length
-      ? rels.map(r => {
-          const other = r.source === matchedEntity.id ? getEntityName(r.target) : getEntityName(r.source);
-          return `- ${r.label} -> **${other}**`;
-        }).join('\n')
-      : '_No relations yet_';
-
-    return `## ${matchedEntity.name} (${matchedEntity.type})\n\n**Properties:**\n${propText}\n\n**Relations (${rels.length}):**\n${relText}`;
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: res.statusText }));
+    throw new Error(err.detail || 'Chat error');
   }
 
-  if (q.includes('how many') || q.includes('count') || q.includes('total')) {
-    return `Current graph:\n- **${entities.length}** entities\n- **${relations.length}** relations\n- Entity types: ${[...new Set(entities.map(e => e.type))].join(', ')}`;
-  }
-
-  const typeKeywords: Record<string, string[]> = {
-    Person: ['person', 'people', 'human'],
-    Organization: ['organization', 'company', 'business'],
-    Location: ['location', 'place', 'country', 'city'],
-    Product: ['product'],
-    Event: ['event'],
-    Money: ['money', 'revenue', 'value'],
-    Date: ['date', 'time', 'year'],
-    Industry: ['industry', 'sector'],
-    Percent: ['percent', 'ratio'],
-  };
-
-  for (const [type, keywords] of Object.entries(typeKeywords)) {
-    if (keywords.some(kw => q.includes(kw))) {
-      const filtered = entities.filter(e => e.type === type);
-      return `## ${type} list (${filtered.length})\n${filtered.map(e => `- **${e.name}**`).join('\n') || '_None_'}`;
-    }
-  }
-
-  if (q.includes('relation') || q.includes('link') || q.includes('connection')) {
-    const top5 = relations.slice(0, 5);
-    return `## Sample relations\n\n${top5.map(r => `- **${getEntityName(r.source)}** -> *${r.label}* -> **${getEntityName(r.target)}**`).join('\n')}\n\nTotal **${relations.length}** relations.`;
-  }
-
-  return `I can answer questions about **${entities.length} entities** and **${relations.length} relations** in the graph.\n\nExamples:\n- "Tell me about [entity name]"\n- "How many organizations are there?"\n- "List dates or times"\n- "What money values are mentioned?"\n- "List relations"\n\n_Current chat remains rule-based. You can later plug an LLM into callChat() in src/lib/ai.ts._`;
+  return res.json() as Promise<ChatApiResponse>;
 }

@@ -2,7 +2,7 @@
 Pydantic schemas - request/response models for FastAPI.
 """
 
-from typing import Any
+from typing import Any, Optional
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -103,3 +103,48 @@ class InsightRequest(BaseModel):
 class InsightResponse(BaseModel):
     insight_markdown: str
     report: dict[str, Any]
+
+
+# ── Chat ──────────────────────────────────────────────────────────
+
+MAX_CHAT_MESSAGE_LENGTH = 4_000
+MAX_CHAT_HISTORY_TURNS = 50
+
+
+class ChatTurn(BaseModel):
+    role: str = Field(..., pattern=r"^(user|model)$")
+    content: str
+
+
+class ChatRequest(BaseModel):
+    session_id: Optional[str] = Field(
+        default=None,
+        max_length=64,
+        description="Existing session ID. Omit or null to start a new session.",
+    )
+    message: str = Field(
+        ...,
+        min_length=1,
+        max_length=MAX_CHAT_MESSAGE_LENGTH,
+        description="Current user message.",
+    )
+    entities: list[Entity] = Field(default_factory=list, max_length=500)
+    relations: list[Relation] = Field(default_factory=list, max_length=5000)
+    input_text: str = Field(default="", max_length=MAX_TEXT_LENGTH)
+
+    @field_validator("message")
+    @classmethod
+    def message_not_blank(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError("message must not be blank.")
+        return v
+
+
+class ChatResponse(BaseModel):
+    session_id: str
+    reply: str
+    engine: str = Field(description="'llm' or 'rule-based'")
+    history: list[ChatTurn] = Field(
+        default_factory=list,
+        description="Recent conversation turns (newest last).",
+    )

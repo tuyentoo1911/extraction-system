@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Play, Loader2, Lightbulb } from 'lucide-react';
 import Markdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { callInsight } from '../../lib/ai';
 import type { GraphData } from '../../types';
 
@@ -68,7 +69,7 @@ export default function InsightView({ data, inputText }: InsightViewProps) {
             </button>
           </div>
           <div className="markdown-body prose prose-sm max-w-none font-sans leading-relaxed text-black/80">
-            <Markdown>{insight}</Markdown>
+            <Markdown remarkPlugins={[remarkGfm]}>{insight}</Markdown>
           </div>
         </div>
       )}

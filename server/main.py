@@ -10,6 +10,11 @@ Improvements:
 """
 
 import logging
+from pathlib import Path
+
+from dotenv import load_dotenv
+
+load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
 from fastapi import FastAPI, HTTPException, Request, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
@@ -34,8 +39,11 @@ from schemas import (
     MetricsResponse,
     InsightRequest,
     InsightResponse,
+    ChatRequest,
+    ChatResponse,
     MAX_PDF_TEXT_LENGTH,
 )
+from chat_service import handle_chat, init_chat_db
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -199,6 +207,17 @@ def kb_entity(name: str, limit: int = 50):
     return {"entity": name, "total": len(triples), "triples": triples}
 
 
+@app.post("/chat", response_model=ChatResponse)
+@limiter.limit("30/minute")
+async def chat(request: Request, req: ChatRequest):
+    """Hybrid chatbot with PostgreSQL memory and optional LLM."""
+    try:
+        return await handle_chat(req)
+    except Exception as e:
+        logger.exception("Chat error")
+        raise HTTPException(500, detail=f"Chat error: {e}")
+
+
 def _require_model():
     if not model_state.model_ready:
         raise HTTPException(
@@ -215,6 +234,7 @@ async def startup_event():
     await asyncio.gather(
         loop.run_in_executor(None, load_model),
         loop.run_in_executor(None, load_kb),
+        loop.run_in_executor(None, init_chat_db),
     )
 
 

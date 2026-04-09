@@ -29,9 +29,11 @@ def load_model() -> None:
         logger.info(f"Loading tokenizer from {MODEL_DIR}...")
         try:
             from transformers import PhobertTokenizer
-            ner_tokenizer = PhobertTokenizer.from_pretrained(str(MODEL_DIR))
+            ner_tokenizer = PhobertTokenizer.from_pretrained(str(MODEL_DIR), use_fast=False)
         except Exception:
-            ner_tokenizer = AutoTokenizer.from_pretrained(str(MODEL_DIR), local_files_only=True)
+            ner_tokenizer = AutoTokenizer.from_pretrained(
+                str(MODEL_DIR), local_files_only=True, use_fast=False
+            )
 
         logger.info(f"Loading model from {MODEL_DIR}...")
         ner_model = AutoModelForTokenClassification.from_pretrained(

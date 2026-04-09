@@ -9,8 +9,15 @@ Improvements:
   - Custom exception handler returns JSON instead of default HTML.
 """
 
+import sys
 import logging
 from pathlib import Path
+
+# Ensure the server directory is always on sys.path,
+# regardless of where Python is launched from (e.g. `python server/main.py`).
+_SERVER_DIR = Path(__file__).resolve().parent
+if str(_SERVER_DIR) not in sys.path:
+    sys.path.insert(0, str(_SERVER_DIR))
 
 from dotenv import load_dotenv
 

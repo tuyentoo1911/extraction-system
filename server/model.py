@@ -26,14 +26,13 @@ def load_model() -> None:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         logger.info(f"Using device: {device}")
 
-        logger.info(f"Loading tokenizer from {MODEL_DIR}...")
+        TOKENIZER_SOURCE = "vinai/phobert-base"
+        logger.info(f"Loading tokenizer from {TOKENIZER_SOURCE}...")
         try:
             from transformers import PhobertTokenizer
-            ner_tokenizer = PhobertTokenizer.from_pretrained(str(MODEL_DIR), use_fast=False)
+            ner_tokenizer = PhobertTokenizer.from_pretrained(TOKENIZER_SOURCE)
         except Exception:
-            ner_tokenizer = AutoTokenizer.from_pretrained(
-                str(MODEL_DIR), local_files_only=True, use_fast=False
-            )
+            ner_tokenizer = AutoTokenizer.from_pretrained(TOKENIZER_SOURCE)
 
         logger.info(f"Loading model from {MODEL_DIR}...")
         ner_model = AutoModelForTokenClassification.from_pretrained(

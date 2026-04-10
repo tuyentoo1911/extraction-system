@@ -1,31 +1,26 @@
 """Xây dựng Knowledge Graph từ NER output + Knowledge Base.
 
-Pipeline trích xuất quan hệ — 3 tầng ưu tiên giảm dần:
+Pipeline trích xuất quan hệ — strict whitelist:
 ────────────────────────────────────────────────────────
+  ALLOWED_RELATIONS (9):
+      founded, headquartered_in, has_office, partnered_with,
+      competitor_of, former_employee, launched_at, developed_by,
+      operates_in
+
   Tầng 1 — Pattern-based (regex + Jaccard entity matching)
-      13 RELATION_PATTERNS port từ knowledge_graph.ipynb.
-      Capture group bắt đúng SUBJECT / OBJECT ngay cạnh verb,
-      không bị greedy capture dư text như phiên bản trước.
-      Entity matching dùng exact → substring → Jaccard(≥0.4).
+      Chỉ giữ pattern map vào whitelist.
 
-  Tầng 2 — Knowledge Base lookup
-      Tra cứu triples corpus (6 298 triples) cho cặp chưa có relation.
+  Tầng 1.5 — Multi-entity patterns (bởi A và B, như A và B)
 
-  Tầng 3 — Co-occurrence scored (fallback)
-      Proximity + type_priority + KB_boost score.
-      Bỏ qua quan hệ nếu không xác định được nhãn cụ thể (không dùng "LIÊN QUAN ĐẾN").
+  Tầng 2 — KB lookup (same-sentence evidence only)
+      Chỉ thêm edge khi 2 entity cùng câu VÀ KB label map vào whitelist.
 
-Regex patterns được test trực tiếp trên câu mẫu từ ảnh:
-  "Nguyễn Minh Anh từng làm việc tại FPT Software từ năm 2010..."
-  → LÀM VIỆC TẠI: person='Nguyễn Minh Anh' | org='FPT Software' ✅
-  "SaoVietTech ký thỏa thuận hợp tác chiến lược với Global AI..."
-  → HỢP TÁC: org1='SaoVietTech' | org2='Global AI Solutions Inc.' ✅
+  Output guard: drop mọi relation ngoài whitelist + domain/range check.
 """
 
 from __future__ import annotations
 
 import re
-import math
 import logging
 from dataclasses import dataclass, field
 from typing import Optional
@@ -39,75 +34,106 @@ logger = logging.getLogger(__name__)
 
 
 # ═══════════════════════════════════════════════════════════════════
-# §1 — Constants
+# §1 — Constants & Whitelist
 # ═══════════════════════════════════════════════════════════════════
+
+ALLOWED_RELATIONS: frozenset[str] = frozenset({
+    # Core 9 relations (original whitelist)
+    "founded", "headquartered_in", "has_office", "partnered_with",
+    "competitor_of", "former_employee", "launched_at", "developed_by",
+    "operates_in",
+    # Extended: connect Date / Money / Location / Percent nodes
+    "established_in",   # Organization/Product → Date  (thành lập năm X, ra mắt ngày X)
+    "occurred_in",      # Event/Organization  → Date  (xảy ra vào / trong năm X)
+    "has_revenue",      # Organization        → Money (báo cáo doanh thu X)
+    "has_value",        # Organization/Product→ Money (giá trị X, ký hợp đồng X)
+    "held_in",          # Event               → Location (tổ chức tại X)
+})
+
+_RELATION_NORM_MAP: dict[str, str | None] = {
+    # Pattern names
+    "founded_by":                  "founded",
+    "founded_by_passive":          "founded",
+    "founded":                     "founded",
+    "headquartered_in":            "headquartered_in",
+    "opened_office_in":            "has_office",
+    "has_office":                  "has_office",
+    "signed_strategic_partnership": "partnered_with",
+    "strategic_partner":           "partnered_with",
+    "partnered_with":              "partnered_with",
+    "long_term_partner":           "partnered_with",
+    "competitor":                  "competitor_of",
+    "competitor_of":               "competitor_of",
+    "former_employee":             "former_employee",
+    "launched_at_event":           "launched_at",
+    "launched_at":                 "launched_at",
+    "developed":                   "developed_by",
+    "co_developed":                "developed_by",
+    "developed_by_passive":        "developed_by",
+    "developed_by":                "developed_by",
+    "operates_in":                 "operates_in",
+    # Extended relations
+    "established_in":              "established_in",
+    "occurred_in":                 "occurred_in",
+    "has_revenue":                 "has_revenue",
+    "has_value":                   "has_value",
+    "held_in":                     "held_in",
+    # KB Vietnamese labels (triples.json relation field, after "_" → " ")
+    "HỢP TÁC":                    "partnered_with",
+    "ĐẶT TẠI":                    "headquartered_in",
+    "SẢN XUẤT":                    "developed_by",
+    "THUỘC NGÀNH":                 "operates_in",
+    "XẢY RA TẠI":                  None,
+    "LÃNH ĐẠO":                   None,
+    "LIÊN QUAN":                   None,
+    "CÓ GIÁ TRỊ":                None,
+    "TĂNG TRƯỞNG":                None,
+    "TỔ CHỨC SỰ KIỆN":            None,
+    "THAM GIA":                    None,
+    "ĐẦU TƯ":                     None,
+}
+
+_RELATION_DOMAIN_RANGE: dict[str, list[tuple[set[str], set[str]]]] = {
+    "founded":          [({"Person", "Organization"}, {"Organization"})],
+    "headquartered_in": [({"Organization"},           {"Location"})],
+    "has_office":       [({"Organization"},           {"Location"})],
+    "partnered_with":   [({"Organization"},           {"Organization"})],
+    "competitor_of":    [({"Organization"},           {"Organization"})],
+    "former_employee":  [({"Person"},                 {"Organization"})],
+    "launched_at":      [({"Product"},                {"Event"})],
+    "developed_by":     [({"Product"},                {"Organization", "Person"})],
+    "operates_in":      [({"Organization"},           {"Industry"})],
+    # Extended
+    "established_in":   [({"Organization", "Product"}, {"Date"})],
+    "occurred_in":      [({"Organization", "Event", "Product"}, {"Date"})],
+    "has_revenue":      [({"Organization"},           {"Money"})],
+    "has_value":        [({"Organization", "Product"}, {"Money"})],
+    "held_in":          [({"Event"},                  {"Location"})],
+}
+
+_NEWS_SOURCES: frozenset[str] = frozenset({
+    "bloomberg", "reuters", "cnn", "cnbc", "bbc", "ap", "afp",
+    "vnexpress", "tuổi trẻ", "thanh niên", "dân trí", "vietnamnet",
+    "cafef", "the wall street journal", "financial times", "nikkei",
+    "vietnam business review", "techcrunch", "the verge", "wired",
+    "forbes", "business insider", "the guardian", "new york times",
+})
 
 _GENERIC_DATE_WORDS = {
     "nam", "năm", "thang", "tháng", "ngay", "ngày",
     "quy", "quý", "tuan", "tuần",
 }
+
+_GENERIC_INDUSTRY_WORDS: frozenset[str] = frozenset({
+    "xây dựng", "tài chính", "công nghệ", "quản lý", "phát triển",
+    "kinh doanh", "sản xuất", "nghiên cứu", "giáo dục", "đào tạo",
+    "thiết kế", "vận hành", "bảo trì", "quảng cáo", "truyền thông",
+    "marketing", "bán hàng", "dịch vụ", "thương mại", "kỹ thuật",
+})
 _LOCATION_PREFIXES = {
     "tp", "tp.", "thành", "thanh", "quận", "quan",
     "huyện", "huyen", "tỉnh", "tinh",
     "phường", "phuong", "xã", "xa", "thị", "thi",
-}
-_GENERIC_NODE_TERMS = {
-    "chính",
-    "vụ này",
-    "thương vụ này",
-    "một cuộc phỏng vấn",
-    "cuộc phỏng vấn",
-    "phỏng vấn",
-    "sự kiện",
-    "sản phẩm này",
-    "doanh nghiệp này",
-    "công ty này",
-    "đối thủ",
-    "đối tác",
-}
-_WEAK_SINGLE_TOKEN_TYPES = {"Person", "Organization", "Event", "Product"}
-
-_RELATION_LABELS_VI: dict[tuple[str, str], str] = {
-    ("Person", "Organization"):       "executive_of",
-    ("Person", "Location"):           "lives_in",
-    ("Organization", "Location"):     "headquartered_in",
-    ("Person", "Event"):              "participated_in",
-    ("Organization", "Event"):        "held_event",
-    ("Person", "Product"):            "uses_product",
-    ("Organization", "Product"):      "developed",
-    ("Product", "Event"):             "launched_at",
-    ("Location", "Event"):            "held_in",
-    ("Organization", "Date"):         "founded_in",
-    ("Event", "Date"):                "held_on",
-    ("Product", "Date"):              "launched_on",
-    ("Organization", "Money"):        "valued_at",
-    ("Person", "Money"):              "income",
-    ("Product", "Money"):             "priced_at",
-    ("Event", "Money"):               "budget",
-    ("Organization", "Percent"):      "growth_rate",
-    ("Product", "Percent"):           "market_share",
-    ("Organization", "Industry"):     "operates_in",
-    ("Person", "Industry"):           "works_in",
-}
-
-_TYPE_PAIR_PRIORITY: dict[tuple[str, str], int] = {
-    ("Person", "Organization"):       10,
-    ("Organization", "Person"):       10,
-    ("Organization", "Organization"): 9,
-    ("Person", "Person"):             8,
-    ("Organization", "Location"):     7,
-    ("Person", "Location"):           7,
-    ("Organization", "Product"):      6,
-    ("Person", "Product"):            6,
-    ("Organization", "Event"):        5,
-    ("Person", "Event"):              5,
-    ("Organization", "Money"):        4,
-    ("Product", "Money"):             4,
-    ("Organization", "Industry"):     3,
-    ("Person", "Industry"):           3,
-    ("Event", "Date"):                2,
-    ("Organization", "Date"):         2,
-    ("Person", "Date"):               1,
 }
 
 _NER_TO_GRAPH: dict[str, str] = {
@@ -117,8 +143,25 @@ _NER_TO_GRAPH: dict[str, str] = {
     "PERCENT": "Percent", "INDUSTRY": "Industry",
 }
 
-_MAX_PAIRS_PER_SENTENCE = 12
-_PROXIMITY_WINDOW       = 50
+
+def _normalize_label(raw_label: str) -> str | None:
+    """Map internal/KB label to whitelist. Returns None if not in whitelist."""
+    norm = _RELATION_NORM_MAP.get(raw_label)
+    if norm is not None:
+        return norm
+    return raw_label if raw_label in ALLOWED_RELATIONS else None
+
+
+def _validate_domain_range(label: str, src_type: str, tgt_type: str) -> bool:
+    """Check entity types match the relation's domain/range constraint."""
+    constraints = _RELATION_DOMAIN_RANGE.get(label)
+    if not constraints:
+        return False
+    return any(src_type in dom and tgt_type in rng for dom, rng in constraints)
+
+
+def _is_news_source(name: str) -> bool:
+    return name.lower().strip() in _NEWS_SOURCES
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -139,180 +182,292 @@ class RelationPattern:
 # Shared building blocks
 _VI_CAP = r"[A-Z\u00C0-\u024F\u1EA0-\u1EF9\u0110\u0111]"
 
-
-# ORG/PERSON name: bắt đầu uppercase, gồm chữ cái + ký hiệu phổ biến
-_NAME = _VI_CAP + r"(?:[\w&,\./]+" + r"(?:\s+" + _VI_CAP + r"[\w&,\./]+)*)"
-
-# Stop-word lookahead: dừng trước từ chức năng để tránh capture quá dài
-_STOP = (
-    r"(?=\s*(?:[,\.\(\)]"
-    r"|\s+(?:v\u00e0|ho\u1eb7c|m\u1ed9t|l\u00e0|c\u00f3"
-    r"|trong|t\u1ea1i|v\u1edbi|t\u1eeb|tr\u01b0\u1edbc|sau"
-    r"|\u0111\u1ebfn|n\u0103m|\u0111\u00e3|\u0111ang|\u0111\u01b0\u1ee3c)\b)"
-    r"|$)"
+# Lowercase connectors that appear inside Vietnamese org/person names
+# e.g. "Công ty", "Tập đoàn", "Nhật Bản", "Hàn Quốc", "Việt Nam"
+_VI_LOWER_CONT = (
+    r"(?:ty|cổ|ph\u1ea7n|h\u1eefu|tr\u00e1ch|nhi\u1ec7m|tnhh|jsc|ltd|corp|co"
+    r"|vi\u1ec7t|nam|nh\u1eadt|h\u00e0n|anh|ph\u00e1p|\u0111\u1ee9c|m\u1ef9"
+    r"|qu\u1ed1c|t\u1ebf|b\u1eafc|trung|\u0111\u00f4ng|t\u00e2y|b\u1ea3n|m\u1edbi)"
 )
+
+# ORG/PERSON name: bắt đầu uppercase, tiếp theo là chữ cái, số,
+# hoặc một số lowercase connector thông dụng trong tên tiếng Việt
+_NAME = (
+    _VI_CAP
+    + r"(?:[\w&,\./]+"
+    + r"(?:\s+(?:" + _VI_CAP + r"|\d|" + _VI_LOWER_CONT + r")[\w&,\./]+)*)"
+)
+
+# Stop-word lookahead: dừng khi gặp dấu câu hoặc từ viết thường không phải connector
+_STOP = r"(?=\s*(?:[,\.\(\);:\-]|\s+[a-z\u00e0-\u01b0\u1ea1-\u1ef9])|$)"
 
 
 RELATION_PATTERNS: list[RelationPattern] = [
 
-    # ── Nhân sự ──────────────────────────────────────────────────
-    RelationPattern("executive_of",
-        re.compile(r"(?P<person>" + _NAME + r")\s*[,–\-]?\s*(?:Ch\u1ee7\s+t\u1ecbch|T\u1ed5ng\s+gi\u00e1m\s+\u0111\u1ed1c|Gi\u00e1m\s+\u0111\u1ed1c|CEO|CFO|CTO|COO|Ph\u00f3\s+ch\u1ee7\s+t\u1ecbch|Tr\u01b0\u1edfng\s+ban|Gi\u00e1m\s+\u0111\u1ed1c\s+\u0111i\u1ec1u\s+h\u00e0nh)\s+(?:c\u1ee7a\s+|t\u1ea1i\s+)?(?P<org>" + _NAME + r")" + _STOP, re.UNICODE),
+    # ── founded: Person/Org → Organization ────────────────────────
+    RelationPattern("founded_by",
+        re.compile(
+            r"(?P<person>" + _NAME + r")\s+"
+            r"(?:tr\u01b0\u1edbc\s+khi\s+)?"
+            r"(?:s\u00e1ng\s+l\u1eadp|\u0111\u1ed3ng\s+s\u00e1ng\s+l\u1eadp|th\u00e0nh\s+l\u1eadp|s\u00e1ng\s+ki\u1ebfn|kh\u1edfi\s+x\u01b0\u1edbng)\s+"
+            r"(?P<org>" + _NAME + r")" + _STOP, re.UNICODE),
         subj_types={"PERSON"}, obj_types={"ORGANIZATION"}, confidence=0.85),
 
-    RelationPattern("formerly_worked_at",
-        re.compile(r"(?P<person>" + _NAME + r")\s+(?:t\u1eebng\s+)?l\u00e0m\s+vi\u1ec7c\s+t\u1ea1i\s+(?P<org>" + _NAME + r")(?=\s+(?:t\u1eeb|trong|tr\u01b0\u1edbc|sau|\u0111\u1ebfn|,|\.|$))", re.UNICODE),
-        subj_types={"PERSON"}, obj_types={"ORGANIZATION"}, confidence=0.80),
-
-    RelationPattern("founded_by",
-        re.compile(r"(?P<person>" + _NAME + r")\s+(?:tr\u01b0\u1edbc\s+khi\s+)?(?:s\u00e1ng\s+l\u1eadp|\u0111\u1ed3ng\s+s\u00e1ng\s+l\u1eadp)\s+(?P<org>" + _NAME + r")" + _STOP, re.UNICODE),
-        subj_types={"PERSON"}, obj_types={"ORGANIZATION"}, confidence=0.85, reverse_edge=True),
-
-    RelationPattern("interviewed",
-        re.compile(r"(?P<org>" + _NAME + r")\s+(?:ph\u1ecfng\s+v\u1ea5n|trao\s+\u0111\u1ed5i\s+v\u1edbi)\s+(?P<person>" + _NAME + r")" + _STOP, re.UNICODE),
-        subj_types={"ORGANIZATION"}, obj_types={"PERSON"}, confidence=0.75),
-
-    RelationPattern("strategic_partnership",
+    # Passive: "ORG được thành lập ... bởi PERSON"
+    RelationPattern("founded_by_passive",
         re.compile(
-            r"(?P<org1>" + _NAME + r")\s+k\u00fd\s+th\u1ecfa\s+thu\u1eadn\s+h\u1ee3p\s+t\u00e1c"
-            r"(?:\s+chi\u1ebfn\s+l\u01b0\u1ee3c)?\s+v\u1edbi\s+(?P<org2>" + _NAME + r")" + _STOP,
+            r"(?P<org>" + _NAME + r")\s*(?:\([^)]+\))?\s*"
+            r"\u0111\u01b0\u1ee3c\s+(?:th\u00e0nh\s+l\u1eadp|s\u00e1ng\s+l\u1eadp|x\u00e2y\s+d\u1ef1ng)"
+            r"(?:[^b\n]{0,60}?)b\u1edfi\s+(?P<person>" + _NAME + r")",
             re.UNICODE,
         ),
-        subj_types={"ORGANIZATION"}, obj_types={"ORGANIZATION"}, confidence=0.92),
+        subj_types={"ORGANIZATION"}, obj_types={"PERSON"}, confidence=0.88, reverse_edge=True),
 
+    # ── former_employee: Person → Organization ────────────────────
+    # "từng làm việc tại", "từng công tác tại", "cựu X của", "từng là X của"
+    RelationPattern("former_employee",
+        re.compile(
+            r"(?P<person>" + _NAME + r")\s+"
+            r"(?:t\u1eebng\s+)?(?:l\u00e0m\s+vi\u1ec7c|c\u00f4ng\s+t\u00e1c|l\u00e0\s+nh\u00e2n\s+vi\u00ean|gi\u1eef\s+ch\u1ee9c|l\u00e0\s+gi\u00e1m\s+\u0111\u1ed1c)"
+            r"\s+(?:t\u1ea1i\s+)?(?P<org>" + _NAME + r")"
+            r"(?=\s+(?:t\u1eeb|trong|tr\u01b0\u1edbc|sau|\u0111\u1ebfn|,|\.|$))",
+            re.UNICODE),
+        subj_types={"PERSON"}, obj_types={"ORGANIZATION"}, confidence=0.80),
+
+    # "cựu [chức vụ] của ORG"
+    RelationPattern("former_employee",
+        re.compile(
+            r"(?P<person>" + _NAME + r")\s+"
+            r"l\u00e0\s+c\u1ef1u\s+(?:gi\u00e1m\s+\u0111\u1ed1c|c\u1ed1\u0111\u00f4ng|nh\u00e2n\s+vi\u00ean|l\u00e3nh\s+\u0111\u1ea1o)?"
+            r"\s*(?:c\u1ee7a\s+)?(?P<org>" + _NAME + r")" + _STOP,
+            re.UNICODE),
+        subj_types={"PERSON"}, obj_types={"ORGANIZATION"}, confidence=0.82),
+
+    # ── partnered_with: Organization ↔ Organization ───────────────
+    # "ký thỏa thuận hợp tác [chiến lược] với"
+    RelationPattern("signed_strategic_partnership",
+        re.compile(
+            r"(?P<org1>" + _NAME + r")\s+"
+            r"k\u00fd\s+(?:th\u1ecfa\s+thu\u1eadn|h\u1ee3p\s+\u0111\u1ed3ng)\s+"
+            r"(?:h\u1ee3p\s+t\u00e1c\s+)?(?:chi\u1ebfn\s+l\u01b0\u1ee3c\s+)?"
+            r"v\u1edbi\s+(?P<org2>" + _NAME + r")" + _STOP,
+            re.UNICODE,
+        ),
+        subj_types={"ORGANIZATION"}, obj_types={"ORGANIZATION"}, confidence=0.92, bidirectional=True),
+
+    # "hợp tác chiến lược / ký kết chiến lược cùng/với"
     RelationPattern("strategic_partner",
-        re.compile(r"(?P<org1>" + _NAME + r")\s+(?:h\u1ee3p\s+t\u00e1c\s+chi\u1ebfn\s+l\u01b0\u1ee3c|k\u00fd\s+k\u1ebft\s+chi\u1ebfn\s+l\u01b0\u1ee3c)\s+(?:c\u00f9ng\s+|v\u1edbi\s+)?(?P<org2>" + _NAME + r")" + _STOP, re.UNICODE),
+        re.compile(
+            r"(?P<org1>" + _NAME + r")\s+"
+            r"(?:h\u1ee3p\s+t\u00e1c\s+chi\u1ebfn\s+l\u01b0\u1ee3c|k\u00fd\s+k\u1ebft\s+chi\u1ebfn\s+l\u01b0\u1ee3c|li\u00ean\s+k\u1ebft\s+chi\u1ebfn\s+l\u01b0\u1ee3c)"
+            r"\s+(?:c\u00f9ng\s+|v\u1edbi\s+)?(?P<org2>" + _NAME + r")" + _STOP,
+            re.UNICODE),
         subj_types={"ORGANIZATION"}, obj_types={"ORGANIZATION"}, confidence=0.85, bidirectional=True),
 
-    RelationPattern("partner_of",
+    # "là đối tác lâu năm/lâu dài/chiến lược của"
+    RelationPattern("partnered_with",
         re.compile(
-            r"(?P<org1>" + _NAME + r")\s+l\u00e0\s+\u0111\u1ed1i\s+t\u00e1c\s+l\u00e2u\s+n\u0103m"
+            r"(?P<org1>" + _NAME + r")\s+l\u00e0\s+\u0111\u1ed1i\s+t\u00e1c"
+            r"\s+(?:l\u00e2u\s+(?:n\u0103m|d\u00e0i)|chi\u1ebfn\s+l\u01b0\u1ee3c|tin\s+c\u1eady)"
             r"\s+(?:c\u1ee7a\s+|v\u1edbi\s+)?(?P<org2>" + _NAME + r")" + _STOP,
             re.UNICODE,
         ),
-        subj_types={"ORGANIZATION"}, obj_types={"ORGANIZATION"}, confidence=0.88),
+        subj_types={"ORGANIZATION"}, obj_types={"ORGANIZATION"}, confidence=0.88, bidirectional=True),
 
-    RelationPattern("long_term_partner",
-        re.compile(r"(?P<org1>" + _NAME + r")\s+(?:l\u00e0\s+)?(?:đ\u1ed1i\s+t\u00e1c\s+l\u00e2u\s+d\u00e0i|\u0111\u1ed1i\s+t\u00e1c\s+chi\u1ebfn\s+l\u01b0\u1ee3c|h\u1ee3p\s+t\u00e1c\s+l\u00e2u\s+d\u00e0i)\s+(?:c\u1ee7a\s+|v\u1edbi\s+)?(?P<org2>" + _NAME + r")" + _STOP, re.UNICODE),
-        subj_types={"ORGANIZATION"}, obj_types={"ORGANIZATION"}, confidence=0.85, bidirectional=True),
+    # "hợp tác / liên doanh / liên kết với"
+    RelationPattern("partnered_with",
+        re.compile(
+            r"(?P<org1>" + _NAME + r")\s+"
+            r"(?:h\u1ee3p\s+t\u00e1c|li\u00ean\s+doanh|li\u00ean\s+k\u1ebft|li\u00ean\s+minh)"
+            r"\s+v\u1edbi\s+(?P<org2>" + _NAME + r")" + _STOP,
+            re.UNICODE,
+        ),
+        subj_types={"ORGANIZATION"}, obj_types={"ORGANIZATION"}, confidence=0.72, bidirectional=True),
 
-    RelationPattern("supplier_to",
-        re.compile(r"(?P<org1>" + _NAME + r")\s+(?:chuy\u00ean\s+)?(?:cung\s+c\u1ea5p|l\u00e0\s+nh\u00e0\s+cung\s+c\u1ea5p)(?:\s+s\u1ea3n\s+ph\u1ea9m|\s+d\u1ecbch\s+v\u1ee5)?\s+(?:cho\s+)?(?P<org2>" + _NAME + r")" + _STOP, re.UNICODE),
-        subj_types={"ORGANIZATION"}, obj_types={"ORGANIZATION"}, confidence=0.82),
-
+    # ── competitor_of: Organization ↔ Organization ────────────────
+    # "là đối thủ / cạnh tranh / vượt mặt ... của/với"
     RelationPattern("competitor",
-        re.compile(r"(?P<org1>" + _NAME + r")\s+(?:l\u00e0\s+)?(?:đ\u1ed1i\s+th\u1ee7|c\u1ea1nh\s+tranh|v\u01b0\u1ee3t\s+m\u1eb7t)(?:\s+tr\u1ef1c\s+ti\u1ebfp|\s+ch\u00ednh)?\s+(?:c\u1ee7a\s+|v\u1edbi\s+)?(?P<org2>" + _NAME + r")" + _STOP, re.UNICODE),
+        re.compile(
+            r"(?P<org1>" + _NAME + r")\s+"
+            r"(?:l\u00e0\s+)?"
+            r"(?:\u0111\u1ed1i\s+th\u1ee7(?:\s+c\u1ea1nh\s+tranh)?|c\u1ea1nh\s+tranh|v\u01b0\u1ee3t\s+m\u1eb7t)"
+            r"(?:\s+tr\u1ef1c\s+ti\u1ebfp|\s+ch\u00ednh)?\s+"
+            r"(?:c\u1ee7a\s+|v\u1edbi\s+)?(?P<org2>" + _NAME + r")" + _STOP,
+            re.UNICODE),
         subj_types={"ORGANIZATION"}, obj_types={"ORGANIZATION"}, confidence=0.82, bidirectional=True),
 
-    RelationPattern("reported_on",
-        re.compile(r"(?P<org1>" + _NAME + r")\s+(?:đ\u01b0a\s+tin|b\u00e1o\s+c\u00e1o|đ\u0103ng\s+tin)\s+(?:v\u1ec1\s+)?(?P<org2>" + _NAME + r")" + _STOP, re.UNICODE),
-        subj_types={"ORGANIZATION"}, obj_types={"ORGANIZATION"}, confidence=0.80),
-
-    RelationPattern("invested_in",
-        re.compile(r"(?P<investor>" + _NAME + r")\s+(?:\u0111\u1ea7u\s+t\u01b0|r\u00f3t|g\u00f3p\s+v\u1ed1n|mua\s+l\u1ea1i|th\u00e2u\s+t\u00f3m)\s+(?:v\u00e0o\s+|cho\s+)?(?P<target>" + _NAME + r")" + _STOP, re.UNICODE),
-        subj_types={"ORGANIZATION", "PERSON"}, obj_types={"ORGANIZATION"}, confidence=0.82),
-
-    # Ký hợp đồng cung cấp PRODUCT cho ORG
-    RelationPattern("supplied_product_to",
-        re.compile(
-            r"(?P<org1>" + _NAME + r")\s+k\u00fd\s+h\u1ee3p\s+\u0111\u1ed3ng\s+cung\s+c\u1ea5p"
-            r"(?:\s+" + _NAME + r")?\s+cho\s+(?P<org2>" + _NAME + r")" + _STOP,
-            re.UNICODE,
-        ),
-        subj_types={"ORGANIZATION"}, obj_types={"ORGANIZATION"}, confidence=0.90),
-
-    # ── Sản phẩm ─────────────────────────────────────────────────
+    # ── developed_by: Product → Organization ──────────────────────
+    # Active "ORG phát triển/ra mắt/sản xuất/tung ra PRODUCT"
     RelationPattern("developed",
-        re.compile(r"(?P<company>" + _NAME + r")\s+(?:ra\s+m\u1eaft|s\u1ea3n\s+xu\u1ea5t|ph\u00e1t\s+tri\u1ec3n|tung\s+ra|gi\u1edbi\s+thi\u1ec7u|c\u00f4ng\s+b\u1ed1)\s+(?P<product>" + _NAME + r")" + _STOP, re.UNICODE),
-        subj_types={"ORGANIZATION"}, obj_types={"PRODUCT"}, confidence=0.78),
+        re.compile(
+            r"(?P<company>" + _NAME + r")\s+"
+            r"(?:ra\s+m\u1eaft|s\u1ea3n\s+xu\u1ea5t|ph\u00e1t\s+tri\u1ec3n|tung\s+ra"
+            r"|gi\u1edbi\s+thi\u1ec7u|c\u00f4ng\s+b\u1ed1|ch\u1ebf\s+t\u1ea1o|x\u00e2y\s+d\u1ef1ng)\s+"
+            r"(?P<product>" + _NAME + r")" + _STOP,
+            re.UNICODE),
+        subj_types={"ORGANIZATION"}, obj_types={"PRODUCT"}, confidence=0.78, reverse_edge=True),
 
     RelationPattern("co_developed",
-        re.compile(r"(?P<company>" + _NAME + r")\s+(?:c\u00f9ng\s+ph\u00e1t\s+tri\u1ec3n|\u0111\u1ed3ng\s+ph\u00e1t\s+tri\u1ec3n)\s+(?P<product>" + _NAME + r")" + _STOP, re.UNICODE),
-        subj_types={"ORGANIZATION"}, obj_types={"PRODUCT"}, confidence=0.85),
-
-    # ORG s\u1eed d\u1ee5ng n\u1ec1n t\u1ea3ng NAME (b\u1eaft \u0111\u1ea7u b\u1eb1ng \"n\u1ec1n t\u1ea3ng\")
-    RelationPattern("uses_platform",
         re.compile(
-            r"(?P<subject>" + _NAME + r")\s+s\u1eed\s+d\u1ee5ng\s+(?:n\u1ec1n\s+t\u1ea3ng\s+)?(?P<product>" + _NAME + r")" + _STOP,
-            re.UNICODE,
-        ),
-        subj_types={"PRODUCT", "ORGANIZATION"}, obj_types={"PRODUCT"}, confidence=0.82),
+            r"(?P<company>" + _NAME + r")\s+"
+            r"(?:c\u00f9ng\s+ph\u00e1t\s+tri\u1ec3n|\u0111\u1ed3ng\s+ph\u00e1t\s+tri\u1ec3n|c\u00f9ng\s+x\u00e2y\s+d\u1ef1ng)"
+            r"\s+(?P<product>" + _NAME + r")" + _STOP,
+            re.UNICODE),
+        subj_types={"ORGANIZATION"}, obj_types={"PRODUCT"}, confidence=0.85, reverse_edge=True),
 
-    # PRODUCT do (nh\u00f3m nghi\u00ean c\u1ee9u c\u1ee7a) ORG ph\u00e1t tri\u1ec3n
+    # Passive "PRODUCT do/bởi ORG phát triển/xây dựng"
     RelationPattern("developed_by_passive",
         re.compile(
-            r"(?P<product>" + _NAME + r")\s+do\s+(?:nh\u00f3m\s+nghi\u00ean\s+c\u1ee9u\s+c\u1ee7a\s+)?(?P<org>" + _NAME + r")\s+ph\u00e1t\s+tri\u1ec3n",
-            re.UNICODE,
-        ),
-        subj_types={"PRODUCT"}, obj_types={"ORGANIZATION"}, confidence=0.88, reverse_edge=True),
-
-    # VisionX \u0111\u01b0\u1ee3c x\u00e2y d\u1ef1ng d\u1ef1a tr\u00ean c\u00e1c nghi\u00ean c\u1ee9u h\u1ee3p t\u00e1c v\u1edbi \u0110\u1ea1i h\u1ecdc B\u00e1ch Khoa
-    RelationPattern("researched_at",
-        re.compile(
-            r"(?P<product>" + _NAME + r")\s+(?:\u0111\u01b0\u1ee3c\s+x\u00e2y\s+d\u1ef1ng\s+)?d\u1ef1a\s+tr\u00ean"
-            r"\s+(?:c\u00e1c\s+)?nghi\u00ean\s+c\u1ee9u\s+h\u1ee3p\s+t\u00e1c\s+v\u1edbi\s+(?P<org>" + _NAME + r")" + _STOP,
+            r"(?P<product>" + _NAME + r")\s+"
+            r"(?:do|b\u1edfi)\s+(?:nh\u00f3m\s+nghi\u00ean\s+c\u1ee9u\s+c\u1ee7a\s+)?"
+            r"(?P<org>" + _NAME + r")\s+"
+            r"(?:ph\u00e1t\s+tri\u1ec3n|x\u00e2y\s+d\u1ef1ng|s\u1ea3n\s+xu\u1ea5t|ch\u1ebf\s+t\u1ea1o)",
             re.UNICODE,
         ),
         subj_types={"PRODUCT"}, obj_types={"ORGANIZATION"}, confidence=0.88),
 
-    # ── Địa điểm ─────────────────────────────────────────────────
-    RelationPattern("headquartered_in",
-        re.compile(r"(?P<org>" + _NAME + r")\s+(?:\u0111\u1eb7t\s+t\u1ea1i|c\u00f3\s+tr\u1ee5\s+s\u1edf\s+t\u1ea1i|ho\u1ea1t\s+\u0111\u1ed9ng\s+t\u1ea1i|\u0111\u1eb7t\s+tr\u1ee5\s+s\u1edf)\s+(?P<loc>" + _NAME + r")" + _STOP, re.UNICODE),
-        subj_types={"ORGANIZATION"}, obj_types={"LOCATION"}, confidence=0.75),
-        
-    # Mở thêm văn phòng đại diện tại — fix đẻ cover cấu trúc thực tế
-    RelationPattern("has_office_in",
+    # Passive "PRODUCT được ORG phát triển"
+    RelationPattern("developed_by_passive",
         re.compile(
-            r"(?P<org>" + _NAME + r")\s+m\u1edf\s+(?:th\u00eam\s+)?(?:v\u0103n\s+ph\u00f2ng"
-            r"(?:\s+\u0111\u1ea1i\s+di\u1ec7n)?|chi\s+nh\u00e1nh)\s+(?:t\u1ea1i\s+)?(?P<loc>" + _NAME + r")" + _STOP,
+            r"(?P<product>" + _NAME + r")\s+"
+            r"\u0111\u01b0\u1ee3c\s+(?P<org>" + _NAME + r")\s+"
+            r"(?:ph\u00e1t\s+tri\u1ec3n|x\u00e2y\s+d\u1ef1ng|s\u1ea3n\s+xu\u1ea5t|thi\u1ebft\s+k\u1ebf)",
+            re.UNICODE,
+        ),
+        subj_types={"PRODUCT"}, obj_types={"ORGANIZATION"}, confidence=0.85),
+
+    # ── headquartered_in: Organization → Location ─────────────────
+    # "ORG đặt tại / có trụ sở tại / tọa lạc tại / có địa chỉ tại LOC"
+    RelationPattern("headquartered_in",
+        re.compile(
+            r"(?P<org>" + _NAME + r")\s+"
+            r"(?:\u0111\u1eb7t\s+t\u1ea1i|c\u00f3\s+tr\u1ee5\s+s\u1edf\s+t\u1ea1i"
+            r"|t\u1ecda\s+l\u1ea1c\s+t\u1ea1i|c\u00f3\s+\u0111\u1ecba\s+ch\u1ec9\s+t\u1ea1i"
+            r"|c\u00f3\s+v\u0103n\s+ph\u00f2ng\s+ch\u00ednh\s+t\u1ea1i"
+            r"|\u0111\u1eb7t\s+tr\u1ee5\s+s\u1edf(?:\s+t\u1ea1i)?)\s+"
+            r"(?P<loc>" + _NAME + r")" + _STOP,
+            re.UNICODE),
+        subj_types={"ORGANIZATION"}, obj_types={"LOCATION"}, confidence=0.75),
+
+    # "Trụ sở [chính] của ORG [đặt] tại LOC"
+    RelationPattern("headquartered_in",
+        re.compile(
+            r"[Tt]r\u1ee5\s+s\u1edf\s+(?:ch\u00ednh\s+)?c\u1ee7a\s+(?:c\u00f4ng\s+ty\s+)?(?P<org>" + _NAME + r")"
+            r"\s+(?:\u0111\u1eb7t\s+)?t\u1ea1i\s+(?P<loc>" + _NAME + r")" + _STOP,
+            re.UNICODE,
+        ),
+        subj_types={"ORGANIZATION"}, obj_types={"LOCATION"}, confidence=0.88),
+
+    # ── has_office: Organization → Location ───────────────────────
+    # "mở [thêm] văn phòng [đại diện] / chi nhánh tại"
+    RelationPattern("opened_office_in",
+        re.compile(
+            r"(?P<org>" + _NAME + r")\s+"
+            r"m\u1edf\s+(?:th\u00eam\s+)?"
+            r"(?:v\u0103n\s+ph\u00f2ng(?:\s+\u0111\u1ea1i\s+di\u1ec7n)?|chi\s+nh\u00e1nh|v\u0103n\s+ph\u00f2ng\s+\u0111\u1ea1i\s+di\u1ec7n)"
+            r"\s+(?:t\u1ea1i\s+)?(?P<loc>" + _NAME + r")" + _STOP,
             re.UNICODE,
         ),
         subj_types={"ORGANIZATION"}, obj_types={"LOCATION"}, confidence=0.85),
 
-    # ── Ngành ────────────────────────────────────────────────────
-    RelationPattern("operates_in",
-        re.compile(r"(?P<org>" + _NAME + r")\s+(?:thu\u1ed9c\s+l\u0129nh\s+v\u1ef1c|ho\u1ea1t\s+\u0111\u1ed9ng\s+trong|chuy\u00ean\s+v\u1ec1|trong\s+ng\u00e0nh|l\u0129nh\s+v\u1ef1c|ng\u00e0nh)\s+(?P<industry>[\w\s]{2,40})" + _STOP, re.UNICODE),
-        subj_types={"ORGANIZATION"}, obj_types={"INDUSTRY"}, confidence=0.72),
-
-    # ── Sự kiện ──────────────────────────────────────────────────
-    RelationPattern("held_event",
-        re.compile(r"(?P<org>" + _NAME + r")\s+(?:t\u1ed5\s+ch\u1ee9c|\u0111\u0103ng\s+cai|ch\u1ee7\s+tr\u00ec|\u0111\u1ee9ng\s+ra\s+t\u1ed5\s+ch\u1ee9c|kh\u1edfi\s+\u0111\u1ed9ng|ph\u00e1t\s+\u0111\u1ed9ng)\s+(?P<event>" + _NAME + r")" + _STOP, re.UNICODE),
-        subj_types={"ORGANIZATION"}, obj_types={"EVENT"}, confidence=0.78),
-
-    # PRODUCT chính thức ra mắt ... tại sự kiện EVENT
-    RelationPattern("launched_at",
+    # "có văn phòng / chi nhánh tại"
+    RelationPattern("has_office",
         re.compile(
-            r"(?P<product>" + _NAME + r")\s+(?:ch\u00ednh\s+th\u1ee9c\s+)?ra\s+m\u1eaft"
-            r"(?:[^\n]{0,60}?)t\u1ea1i\s+(?:s\u1ef1\s+ki\u1ec7n\s+)?(?P<event>" + _NAME + r")" + _STOP,
+            r"(?P<org>" + _NAME + r")\s+"
+            r"(?:c\u00f3|thi\u1ebft\s+l\u1eadp)\s+"
+            r"(?:v\u0103n\s+ph\u00f2ng(?:\s+\u0111\u1ea1i\s+di\u1ec7n)?|chi\s+nh\u00e1nh)\s+"
+            r"(?:t\u1ea1i\s+)?(?P<loc>" + _NAME + r")" + _STOP,
+            re.UNICODE,
+        ),
+        subj_types={"ORGANIZATION"}, obj_types={"LOCATION"}, confidence=0.82),
+
+    # ── operates_in: Organization → Industry ──────────────────────
+    # Requires explicit "thuộc lĩnh vực / chuyên về / trong ngành" — NOT just co-occurrence
+    RelationPattern("operates_in",
+        re.compile(
+            r"(?P<org>" + _NAME + r")\s+"
+            r"(?:thu\u1ed9c\s+l\u0129nh\s+v\u1ef1c|ho\u1ea1t\s+\u0111\u1ed9ng\s+trong\s+l\u0129nh\s+v\u1ef1c"
+            r"|chuy\u00ean\s+v\u1ec1|chuy\u00ean\s+trong|trong\s+ng\u00e0nh|l\u0129nh\s+v\u1ef1c\s+ch\u00ednh)"
+            r"\s+(?P<industry>[\w\s]{2,40})" + _STOP,
+            re.UNICODE),
+        subj_types={"ORGANIZATION"}, obj_types={"INDUSTRY"}, confidence=0.80),
+
+    # ── launched_at: Product → Event ──────────────────────────────
+    RelationPattern("launched_at_event",
+        re.compile(
+            r"(?P<product>" + _NAME + r")\s+"
+            r"(?:ch\u00ednh\s+th\u1ee9c\s+)?(?:ra\s+m\u1eaft|gi\u1edbi\s+thi\u1ec7u|c\u00f4ng\s+b\u1ed1)"
+            r"(?:[^\n]{0,60}?)"
+            r"t\u1ea1i\s+(?:s\u1ef1\s+ki\u1ec7n\s+)?(?P<event>" + _NAME + r")" + _STOP,
             re.UNICODE,
         ),
         subj_types={"PRODUCT"}, obj_types={"EVENT"}, confidence=0.88),
 
+    # ── held_in: Event → Location ──────────────────────────────────
     RelationPattern("held_in",
-        re.compile(r"(?P<event>" + _NAME + r")\s+(?:di\u1ec5n\s+ra\s+t\u1ea1i|t\u1ed5\s+ch\u1ee9c\s+t\u1ea1i|x\u1ea3y\s+ra\s+t\u1ea1i|\u0111\u01b0\u1ee3c\s+t\u1ed5\s+ch\u1ee9c\s+t\u1ea1i|khai\s+m\u1ea1c\s+t\u1ea1i|di\u1ec5n\s+ra)\s+(?P<loc>" + _NAME + r")" + _STOP, re.UNICODE),
-        subj_types={"EVENT"}, obj_types={"LOCATION"}, confidence=0.76),
-
-    RelationPattern("participated_in",
-        re.compile(r"(?P<person>" + _NAME + r")\s+(?:tham\s+gia|tham\s+d\u1ef1|xu\u1ea5t\s+hi\u1ec7n\s+t\u1ea1i|c\u00f3\s+m\u1eb7t\s+t\u1ea1i|ph\u00e1t\s+bi\u1ec3u\s+t\u1ea1i)\s+(?P<event>" + _NAME + r")" + _STOP, re.UNICODE),
-        subj_types={"PERSON"}, obj_types={"EVENT"}, confidence=0.73),
-
-    # ── Tài chính ────────────────────────────────────────────────
-    RelationPattern("valued_at",
-        re.compile(r"(?P<entity>" + _NAME + r")\s+(?:tr\u1ecb\s+gi\u00e1|c\u00f3\s+gi\u00e1\s+tr\u1ecb|\u0111\u1ea1t|gi\u00e1\s+tr\u1ecb\s+kho\u1ea3ng|\u01b0\u1edbc\s+t\u00ednh)\s+(?P<money>\d[\d.,]*\s*(?:tri\u1ec7u|t\u1ef7|ngh\u00ecn|ng\u00e0n)?\s*(?:USD|VND|VN\u0110|\u0111\u1ed3ng|\u0111\u00f4)?)", re.UNICODE),
-        subj_types=None, obj_types=None, confidence=0.75),
-
-    RelationPattern("growth_rate",
-        re.compile(r"(?P<entity>" + _NAME + r")\s+(?:t\u0103ng\s+tr\u01b0\u1edfng|t\u0103ng|\u0111\u1ea1t|ghi\s+nh\u1eadn|t\u0103ng\s+l\u00ean)\s+(?P<pct>\d[\d.,]*\s*%(?:/n\u0103m)?)", re.UNICODE),
-        subj_types=None, obj_types=None, confidence=0.70),
-
-    # ORG mở rộng thị trường sang LOC
-    RelationPattern("market_expansion",
         re.compile(
-            r"(?P<org>" + _NAME + r")\s+m\u1edf\s+r\u1ed9ng\s+th\u1ecb\s+tr\u01b0\u1eddng"
-            r"\s+sang\s+(?P<loc>" + _NAME + r")" + _STOP,
+            r"(?P<event>" + _NAME + r")\s+"
+            r"(?:t\u1ed5\s+ch\u1ee9c|di\u1ec5n\s+ra|khai\s+m\u1ea1c|ch\u00ednh\s+th\u1ee9c\s+di\u1ec5n\s+ra)"
+            r"\s+(?:\u1edf\s+|t\u1ea1i\s+)(?P<loc>" + _NAME + r")" + _STOP,
             re.UNICODE,
         ),
-        subj_types={"ORGANIZATION"}, obj_types={"LOCATION"}, confidence=0.80),
+        subj_types={"EVENT"}, obj_types={"LOCATION"}, confidence=0.85),
+
+    # ── has_revenue: Organization → Money ─────────────────────────
+    # "ORG báo cáo/ghi nhận/đạt doanh thu X" / "doanh thu X của ORG"
+    RelationPattern("has_revenue",
+        re.compile(
+            r"(?P<org>" + _NAME + r")\s+"
+            r"(?:b\u00e1o\s+c\u00e1o|ghi\s+nh\u1eadn|thu\s+v\u1ec1|\u0111\u1ea1t)"
+            r"(?:\s+[\w\s]{0,20}?)?doanh\s+thu"
+            r"(?:\s+\u0111\u1ea1t)?\s+"
+            r"(?P<money>[\d][[\d,\.]*\s*(?:tri\u1ec7u|t\u1ef7|ngh\u00ecn)?\s*(?:USD|VND|VN\u0110|\u0111\u1ed3ng|\$)?)",
+            re.UNICODE | re.IGNORECASE,
+        ),
+        subj_types={"ORGANIZATION"}, obj_types={"MONEY"}, confidence=0.82),
+
+    # "doanh thu của ORG là/đạt X"
+    RelationPattern("has_revenue",
+        re.compile(
+            r"doanh\s+thu(?:\s+(?:c\u1ee7a|c\u00f4ng\s+ty))?\s+(?P<org>" + _NAME + r")"
+            r"\s+(?:l\u00e0|\u0111\u1ea1t|l\u00ean\s+t\u1edbi)\s+"
+            r"(?P<money>[\d][[\d,\.]*\s*(?:tri\u1ec7u|t\u1ef7|ngh\u00ecn)?\s*(?:USD|VND|VN\u0110|\u0111\u1ed3ng|\$)?)",
+            re.UNICODE | re.IGNORECASE,
+        ),
+        subj_types={"ORGANIZATION"}, obj_types={"MONEY"}, confidence=0.80),
+
+    # ── has_value: Organization/Product → Money ────────────────────
+    # "ORG/PRODUCT với giá trị / trị giá X"
+    RelationPattern("has_value",
+        re.compile(
+            r"(?P<subj>" + _NAME + r")\s+(?:v\u1edbi\s+)?(?:gi\u00e1\s+tr\u1ecb|tr\u1ecb\s+gi\u00e1)"
+            r"\s+(?P<money>[\d][[\d,\.]*\s*(?:tri\u1ec7u|t\u1ef7|ngh\u00ecn)?\s*(?:USD|VND|VN\u0110|\u0111\u1ed3ng|\$)?)" + _STOP,
+            re.UNICODE,
+        ),
+        subj_types={"ORGANIZATION"}, obj_types={"MONEY"}, confidence=0.80),
+
+    # ── established_in: Organization → Date ───────────────────────
+    RelationPattern("established_in",
+        re.compile(
+            r"(?P<org>" + _NAME + r")\s*(?:\([^)]+\))?\s*"
+            r"(?:\u0111\u01b0\u1ee3c\s+)?(?:th\u00e0nh\s+l\u1eadp|s\u00e1ng\s+l\u1eadp|ra\s+\u0111\u1eddi)"
+            r"\s+(?:t\u1ea1i|v\u00e0o|n\u0103m)?\s*"
+            r"(?P<date>[Nn]\u0103m\s+\d{4}|\d{4}|\d{1,2}/\d{1,2}/\d{4}|\d{4}-\d{2}-\d{2})" + _STOP,
+            re.UNICODE,
+        ),
+        subj_types={"ORGANIZATION"}, obj_types={"DATE"}, confidence=0.85),
+
+    # ── occurred_in: Organization/Event → Date ────────────────────
+    # "ORG ... vào năm X" / "ORG ... trong năm X"
+    RelationPattern("occurred_in",
+        re.compile(
+            r"(?P<subj>" + _NAME + r")\s+"
+            r"(?:[^\n]{0,60}?)"
+            r"(?:v\u00e0o\s+n\u0103m|trong\s+n\u0103m|n\u0103m)\s+"
+            r"(?P<date>\d{4})" + _STOP,
+            re.UNICODE,
+        ),
+        subj_types={"ORGANIZATION", "EVENT", "PRODUCT"}, obj_types={"DATE"}, confidence=0.65),
 ]
 
 
@@ -390,11 +545,14 @@ def merge_adjacent_entities(raw_entities: list[dict]) -> list[dict]:
     cur = raw_entities[0].copy()
     for nxt in raw_entities[1:]:
         same_type = nxt["ner_type"] == cur["ner_type"]
-        cur_last  = cur["words"][-1]  if cur.get("words")  else -99
-        nxt_first = nxt["words"][0]   if nxt.get("words")  else -98
-        if same_type and nxt_first == cur_last + 1:
+        cur_words = cur.get("words") or []
+        nxt_words = nxt.get("words") or []
+        # Only merge if BOTH have valid (non-empty) word indices
+        cur_last  = cur_words[-1] if cur_words else None
+        nxt_first = nxt_words[0]  if nxt_words else None
+        if same_type and cur_last is not None and nxt_first is not None and nxt_first == cur_last + 1:
             cur["text"] += " " + nxt["text"]
-            cur["words"] = cur.get("words", []) + nxt.get("words", [])
+            cur["words"] = cur_words + nxt_words
         else:
             merged.append(cur)
             cur = nxt.copy()
@@ -410,7 +568,15 @@ def _is_informative(name: str, gtype: str) -> bool:
     norm = _norm(name)
     if len(norm) < 2 or re.fullmatch(r"[\W_]+", norm):
         return False
-        
+
+    # Sanity check: entity name không được quá dài (dấu hiệu merge/capture lỗi)
+    _MAX_WORDS = {"Organization": 10, "Person": 6, "Location": 8,
+                  "Product": 8, "Event": 10, "Date": 6,
+                  "Money": 6, "Industry": 6, "Percent": 4}
+    max_w = _MAX_WORDS.get(gtype, 10)
+    if len(norm.split()) > max_w:
+        return False
+
     # Loại rác viết thường (Proper nouns không được viết thường hoàn toàn)
     if gtype in ["Person", "Organization"] and norm.islower():
         return False
@@ -420,8 +586,7 @@ def _is_informative(name: str, gtype: str) -> bool:
     
     # Lọc rác một chữ chung chung cho Organization
     if gtype == "Organization":
-        bad_org_words = {"công ty", "tập đoàn", "tập đoàn công ty", "tổng công ty", "group", "holdings", "inc", "corp", "hiệp hội", "ngân hàng", "ban", "ngành", "phòng", "văn phòng", "chi nhánh", "trung tâm"}
-
+        bad_org_words = {"công ty", "tập đoàn", "Tập đoàn công ty", "tổng công ty", "group", "holdings", "inc", "corp", "hiệp hội", "ngân hàng", "ban", "ngành", "phòng", "văn phòng", "chi nhánh", "trung tâm"}
         if low in bad_org_words:
             return False
         # Các cụm kiểu "Group phòng", "Group chính"
@@ -445,75 +610,25 @@ def _is_informative(name: str, gtype: str) -> bool:
         if len(toks) == 2 and toks[0] in _LOCATION_PREFIXES:
             if not (kb.kb_ready and kb.get_entity_type(norm) == "LOCATION"):
                 return False
+    if gtype == "Industry":
+        if low in _GENERIC_INDUSTRY_WORDS:
+            return False
+        # Filter single-word or too-short Industry entities (likely NER noise)
+        if len(norm) < 4 or (len(toks) == 1 and len(toks[0]) <= 4):
+            return False
+        # Filter if ends with capitalized word or person-title — likely NER boundary bleed
+        _PERSON_TITLES = {"giáo", "ông", "bà", "anh", "chị", "tiến", "sĩ", "phó", "giám", "tổng"}
+        orig_toks = norm.split()
+        last_orig = orig_toks[-1] if orig_toks else ""
+        if last_orig[0:1].isupper() or last_orig.lower() in _PERSON_TITLES:
+            return False
+    if gtype == "Organization" and _is_news_source(norm):
+        return False
     return True
 
 
 def _is_noisy_date(e: Entity) -> bool:
     return e.type == "Date" and not any(c.isdigit() for c in e.name)
-
-
-def _is_generic_node_name(name: str) -> bool:
-    low = _norm(name).lower()
-    if low in _GENERIC_NODE_TERMS:
-        return True
-    if low.startswith(("một ", "các ", "những ")) and len(low.split()) <= 4:
-        return True
-    return False
-
-
-def _is_weak_single_token(name: str, gtype: str) -> bool:
-    parts = [part for part in _norm(name).split() if part]
-    if len(parts) != 1 or gtype not in _WEAK_SINGLE_TOKEN_TYPES:
-        return False
-    token = parts[0]
-    if len(token) <= 3:
-        return True
-    if token.islower():
-        return True
-    return False
-
-
-def _looks_like_fragment(entity: Entity, all_entities: list[Entity], text: str) -> bool:
-    name = _norm(entity.name)
-    low_name = name.lower()
-    if len(name.split()) > 2:
-        return False
-
-    for other in all_entities:
-        if other.id == entity.id:
-            continue
-        other_name = _norm(other.name)
-        low_other = other_name.lower()
-        if low_name == low_other:
-            continue
-        if len(other_name) <= len(name):
-            continue
-        if low_name not in low_other:
-            continue
-        if entity.type != other.type and entity.type not in {"Person", "Organization", "Location"}:
-            continue
-        if not re.search(rf"(?<!\w){re.escape(name)}(?!\w)", text, re.IGNORECASE):
-            continue
-        if re.search(rf"(?<!\w){re.escape(other_name)}(?!\w)", text, re.IGNORECASE):
-            return True
-    return False
-
-
-def _filter_entities(entities: list[Entity], text: str) -> list[Entity]:
-    filtered: list[Entity] = []
-    for entity in entities:
-        if _is_generic_node_name(entity.name):
-            continue
-        if _is_weak_single_token(entity.name, entity.type):
-            continue
-        filtered.append(entity)
-
-    final_entities: list[Entity] = []
-    for entity in filtered:
-        if _looks_like_fragment(entity, filtered, text):
-            continue
-        final_entities.append(entity)
-    return final_entities
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -541,8 +656,14 @@ def _extract_pattern_relations(
     seen_tk:   set[tuple[str, str, str]] = set()
     seen_pk:   set[tuple[str, str]]      = set()
 
+    entity_map = {e.id: e for e in entities}
+
     for sent in sentences:
         for pat in RELATION_PATTERNS:
+            lbl = _normalize_label(pat.name)
+            if lbl is None:
+                continue
+
             for m in pat.pattern.finditer(sent):
                 try:
                     st = m.group(1).strip()
@@ -555,20 +676,22 @@ def _extract_pattern_relations(
                 se = _best_entity_match(st, entities, pat.subj_types)
                 oe = _best_entity_match(ot, entities, pat.obj_types)
 
-                
-
                 if se is None and pat.subj_types is not None:
                     continue
                 if oe is None and pat.obj_types is not None:
                     continue
                 if se is None or oe is None or se.id == oe.id:
                     continue
-                    
+
                 if pat.reverse_edge:
                     se, oe = oe, se
 
-                lbl = pat.name
-                tk  = _tk(se.id, oe.id, lbl)
+                if _is_news_source(se.name) or _is_news_source(oe.name):
+                    continue
+                if not _validate_domain_range(lbl, se.type, oe.type):
+                    continue
+
+                tk = _tk(se.id, oe.id, lbl)
                 if tk in seen_tk:
                     continue
                 seen_tk.add(tk)
@@ -581,75 +704,108 @@ def _extract_pattern_relations(
                         seen_tk.add(tkr)
                         relations.append(Relation(source=oe.id, target=se.id, label=lbl))
 
+    # Tầng 1b — Pronoun/context resolution for headquartered_in & has_office
+    _resolve_pronoun_relations(entities, sentences, relations, seen_tk, seen_pk)
+
     return relations, seen_pk
 
 
-# ═══════════════════════════════════════════════════════════════════
-# §8 — Tầng 3: Co-occurrence scored
-# ═══════════════════════════════════════════════════════════════════
+def _resolve_pronoun_relations(
+    entities: list[Entity],
+    sentences: list[str],
+    relations: list[Relation],
+    seen_tk: set[tuple[str, str, str]],
+    seen_pk: set[tuple[str, str]],
+) -> None:
+    """Handle pronouns and generic subjects referencing the last-mentioned Organization."""
+    orgs = [e for e in entities if e.type == "Organization"]
+    locs = [e for e in entities if e.type == "Location"]
+    if not orgs or not locs:
+        return
 
-@dataclass(order=True)
-class _SP:
-    score: float
-    src:   Entity = field(compare=False)
-    tgt:   Entity = field(compare=False)
-    lbl:   str    = field(compare=False)
-
-
-def _fallback_label(src: Entity, tgt: Entity) -> Optional[str]:
-    if kb.kb_ready:
-        lbl = kb.find_relation(src.name, tgt.name)
-        if lbl:
-            return lbl
-    return _RELATION_LABELS_VI.get((src.type, tgt.type))
-
-
-def _score(src: Entity, tgt: Entity, sp: int, tp: int) -> float:
-    type_s = _TYPE_PAIR_PRIORITY.get(
-        (src.type, tgt.type),
-        _TYPE_PAIR_PRIORITY.get((tgt.type, src.type), 0),
+    last_org: Optional[Entity] = None
+    _LOC_PREFIX = r"(?:(?:qu\u1eadn|huy\u1ec7n|t\u1ec9nh|ph\u01b0\u1eddng|x\u00e3|th\u00e0nh\s+ph\u1ed1|tp\.?)\s+)?"
+    pronoun_hq = re.compile(
+        r"(?:(?:[Tt]r\u1ee5\s+s\u1edf\s+(?:ch\u00ednh\s+)?c\u1ee7a\s+c\u00f4ng\s+ty)"
+        r"|(?:h\u1ecd|c\u00f4ng\s+ty))\s+"
+        r"(?:\u0111\u1eb7t\s+(?:tr\u1ee5\s+s\u1edf\s+)?t\u1ea1i"
+        r"|c\u00f3\s+tr\u1ee5\s+s\u1edf\s+t\u1ea1i"
+        r"|m\u1edf\s+(?:th\u00eam\s+)?(?:v\u0103n\s+ph\u00f2ng"
+        r"(?:\s+\u0111\u1ea1i\s+di\u1ec7n)?|chi\s+nh\u00e1nh)\s+t\u1ea1i)"
+        r"\s+" + _LOC_PREFIX + r"(?P<loc>" + _NAME + r")",
+        re.UNICODE,
     )
-    prox = (5.0 * math.exp(-abs(sp - tp) / (_PROXIMITY_WINDOW * 6))
-            if sp >= 0 and tp >= 0 else 0.0)
-    kb_b = 3.0 if kb.kb_ready else 0.0
-    return type_s + prox + kb_b
+
+    for sent in sentences:
+        for org in orgs:
+            if _find_pos(org, sent) >= 0:
+                last_org = org
+
+        for m in pronoun_hq.finditer(sent):
+            if last_org is None:
+                continue
+            loc_text = m.group("loc").strip()
+            loc_e = _best_entity_match(loc_text, locs, {"LOCATION"})
+            if not loc_e or loc_e.id == last_org.id:
+                continue
+            full_match = m.group(0).lower()
+            lbl = "has_office" if "văn phòng" in full_match or "chi nhánh" in full_match else "headquartered_in"
+            if not _validate_domain_range(lbl, last_org.type, loc_e.type):
+                continue
+            tk = _tk(last_org.id, loc_e.id, lbl)
+            if tk in seen_tk:
+                continue
+            seen_tk.add(tk)
+            seen_pk.add(_pk(last_org.id, loc_e.id))
+            relations.append(Relation(source=last_org.id, target=loc_e.id, label=lbl))
 
 
-def _extract_cooccurrence_relations(
+# ═══════════════════════════════════════════════════════════════════
+# §8 — Tầng 2: KB enrichment (same-sentence evidence only)
+# ═══════════════════════════════════════════════════════════════════
+
+def _extract_kb_relations(
     entities: list[Entity],
     sentences: list[str],
     existing_pk: set[tuple[str, str]],
 ) -> list[Relation]:
+    """KB lookup restricted to entity pairs co-occurring in the same sentence."""
+    if not kb.kb_ready:
+        return []
+
     relations: list[Relation] = []
-    seen_pk:   set[tuple[str, str]]      = set(existing_pk)
-    seen_tk:   set[tuple[str, str, str]] = set()
+    seen_pk: set[tuple[str, str]] = set(existing_pk)
 
     for sent in sentences:
-        ents = [(e, _find_pos(e, sent))
-                for e in entities
-                if not _is_noisy_date(e) and _find_pos(e, sent) >= 0]
-        if len(ents) < 2:
+        ents_in_sent = [
+            e for e in entities
+            if not _is_noisy_date(e) and _find_pos(e, sent) >= 0
+        ]
+        if len(ents_in_sent) < 2:
             continue
 
-        scored: list[_SP] = []
-        for i, (se, sp) in enumerate(ents):
-            for te, tp in ents[i + 1:]:
+        for i, se in enumerate(ents_in_sent):
+            for te in ents_in_sent[i + 1:]:
                 pk = _pk(se.id, te.id)
                 if pk in seen_pk:
                     continue
-                lbl = _fallback_label(se, te)
-                if lbl:
-                    scored.append(_SP(_score(se, te, sp, tp), se, te, lbl))
+                if _is_news_source(se.name) or _is_news_source(te.name):
+                    continue
 
-        scored.sort(key=lambda p: p.score, reverse=True)
-        for sp in scored[:_MAX_PAIRS_PER_SENTENCE]:
-            pk = _pk(sp.src.id, sp.tgt.id)
-            tk = _tk(sp.src.id, sp.tgt.id, sp.lbl)
-            if pk in seen_pk or tk in seen_tk:
-                continue
-            seen_pk.add(pk)
-            seen_tk.add(tk)
-            relations.append(Relation(source=sp.src.id, target=sp.tgt.id, label=sp.lbl))
+                raw_lbl = kb.find_relation(se.name, te.name)
+                if not raw_lbl:
+                    continue
+                lbl = _normalize_label(raw_lbl)
+                if lbl is None:
+                    continue
+                if not _validate_domain_range(lbl, se.type, te.type):
+                    if _validate_domain_range(lbl, te.type, se.type):
+                        se, te = te, se
+                    else:
+                        continue
+
+                seen_pk.add(pk)
+                relations.append(Relation(source=se.id, target=te.id, label=lbl))
 
     return relations
 
@@ -740,44 +896,23 @@ def _resolve_aliases(entities: list[Entity], text: str) -> list[Entity]:
     return list(merged.values())
 
 
-def _fold_properties(entities: list[Entity], relations: list[Relation]) -> tuple[list[Entity], list[Relation]]:
-    kept_types  = {"Organization", "Person", "Product", "Event", "Location"}
-    final_entities = {e.id: e for e in entities}
-    final_relations: list[Relation] = []
-
-    # Bảng map label → property key rõ ràng
-    _LABEL_TO_PROP: dict[str, str] = {
-        "founded_in":              "Founded",
-        "headquartered_in":        "Headquarters",
-        "located_in":              "Headquarters",
-        "valued_at":               "Value",
-        "priced_at":               "Value",
-        "income":                  "Income",
-        "growth_rate":             "Growth",
-        "held_on":                 "Date",
-        "launched_on":             "Launch Date",
-        "held_in":                 "Location",
-        "operates_in":             "Industry",
-        "works_in":                "Industry",
+def _fold_properties(
+    entities: list[Entity],
+    relations: list[Relation],
+    sentences: list[str],
+) -> tuple[list[Entity], list[Relation]]:
+    """Giữ tất cả 9 entity types làm nodes. Không fold orphans."""
+    kept_types = {
+        "Organization", "Person", "Product", "Event", "Location",
+        "Date", "Money", "Percent", "Industry",
     }
-
+    entity_map = {e.id: e for e in entities}
+    final_relations: list[Relation] = []
     for r in relations:
-        src = final_entities.get(r.source)
-        tgt = final_entities.get(r.target)
-        if not src or not tgt:
-            continue
-
-        if tgt.type not in kept_types:
-            prop_key = _LABEL_TO_PROP.get(r.label, r.label.replace("_", " ").title())
-            # Không ghi đè property key đã được set bởi _extract_entity_properties
-            if not any(p.key == prop_key for p in src.properties):
-                src.properties.append(EntityProperty(key=prop_key, value=tgt.name))
-        elif src.type not in kept_types:
-            tgt.properties.append(EntityProperty(key=f"Has {src.type}", value=src.name))
-        else:
+        if entity_map.get(r.source) and entity_map.get(r.target):
             final_relations.append(r)
 
-    filtered_entities = [e for e in final_entities.values() if e.type in kept_types]
+    filtered_entities = [e for e in entities if e.type in kept_types]
 
     for e in filtered_entities:
         seen_props: set[tuple] = set()
@@ -795,280 +930,778 @@ def _fold_properties(entities: list[Entity], relations: list[Relation]) -> tuple
 
 
 # ═══════════════════════════════════════════════════════════════════
-# §9.0 — Direct property extraction (regex-based, per-entity)
+# §9.5 — Context-based Product detection
 # ═══════════════════════════════════════════════════════════════════
 
-def _get_sentence_of(pos: int, text: str) -> str:
-    """Trả về câu (dòng đoạn) chứa vị trí ký tự pos."""
-    start = text.rfind("\n", 0, pos)
-    end   = text.find("\n", pos)
-    return text[start + 1 if start >= 0 else 0 : end if end >= 0 else len(text)]
+_PRODUCT_CONTEXT_PATTERNS: list[re.Pattern] = [
+    # "sản phẩm/giải pháp/... mang tên/có tên NAME"
+    re.compile(
+        r"(?:sản\s+phẩm|gi\u1ea3i\s+ph\u00e1p|ph\u1ea7n\s+m\u1ec1m|\u1ee9ng\s+d\u1ee5ng|h\u1ec7\s+th\u1ed1ng|d\u1ecbch\s+v\u1ee5)"
+        r"(?:\s+[\w\s\u00C0-\u1EF9]{0,40}?)?"
+        r"(?:mang\s+t\u00ean|c\u00f3\s+t\u00ean|g\u1ecdi\s+l\u00e0|t\u00ean\s+l\u00e0|l\u00e0)\s+"
+        r"(?P<name>[A-Z][\w]*(?:\s+[A-Z][\w]*)*)",
+        re.UNICODE,
+    ),
+    # "nền tảng/platform NAME"
+    re.compile(
+        r"(?:n\u1ec1n\s+t\u1ea3ng|platform)\s+"
+        r"(?P<name>[A-Z][\w]*(?:\s+[A-Z][\w]*)*)",
+        re.UNICODE,
+    ),
+    # "sản phẩm NAME do/được ORG phát triển" - NAME trước "do"
+    re.compile(
+        r"(?:s\u1ea3n\s+ph\u1ea9m|gi\u1ea3i\s+ph\u00e1p)\s+"
+        r"(?P<name>[A-Z][\w]*(?:\s+[A-Z][\w]*)*)\s+"
+        r"(?:do|b\u1edfi|\u0111\u01b0\u1ee3c)",
+        re.UNICODE,
+    ),
+    # "ra mắt sản phẩm NAME" / "giới thiệu NAME"
+    re.compile(
+        r"(?:ra\s+m\u1eaft|gi\u1edbi\s+thi\u1ec7u|c\u00f4ng\s+b\u1ed1)\s+"
+        r"(?:s\u1ea3n\s+ph\u1ea9m\s+)?"
+        r"(?P<name>[A-Z][\w]*(?:\s+[A-Z][\w]*)*)"
+        r"(?=\s+(?:v\u00e0o|t\u1ea1i|t\u1ea1i\s+s\u1ef1\s+ki\u1ec7n|$|\.))",
+        re.UNICODE,
+    ),
+]
 
 
-def _extract_entity_properties(entities: list[Entity], text: str) -> None:
-    """Bổ sung properties đúng vào từng entity bằng regex trực tiếp trên văn bản."""
+def _detect_products_from_context(
+    text: str,
+    entities: list[Entity],
+    seen: dict[tuple, str],
+) -> list[Entity]:
+    """Scan text for Product names using context clues that NER missed."""
+    existing_lower = {e.name.lower() for e in entities}
+    new_products: list[Entity] = []
 
-    def _add(e: Entity, key: str, value: str) -> None:
-        v = _norm(value)
-        if v and not any(p.key == key for p in e.properties):
-            e.properties.append(EntityProperty(key=key, value=v))
+    for pat in _PRODUCT_CONTEXT_PATTERNS:
+        for m in pat.finditer(text):
+            name = _norm(m.group("name"))
+            if len(name) < 2:
+                continue
+            key = (name.lower(), "Product")
+            if key in seen or name.lower() in existing_lower:
+                for e in entities:
+                    if e.name.lower() == name.lower() and e.type != "Product":
+                        e.type = "Product"
+                continue
+            eid = f"E{len(entities) + len(new_products) + 1}"
+            seen[key] = eid
+            new_products.append(Entity(
+                id=eid, name=name, type="Product",
+                properties=[], aliases=[],
+            ))
+            existing_lower.add(name.lower())
 
-    orgs     = [e for e in entities if e.type == "Organization"]
-    persons  = [e for e in entities if e.type == "Person"]
+    return new_products
+
+
+# ═══════════════════════════════════════════════════════════════════
+# §9.6 — Contextual relation extractor (appositive, compound, research)
+# ═══════════════════════════════════════════════════════════════════
+
+def _extract_contextual_relations(
+    entities: list[Entity],
+    sentences: list[str],
+    text: str,
+    existing_pk: set[tuple[str, str]],
+) -> list[Relation]:
+    """Extract relations from complex sentence structures:
+    1. Appositive: 'ORG, một doanh nghiệp có trụ sở tại LOC' → headquartered_in
+    2. Compound: 'ORG ... và là đối tác lâu năm/dài/chiến lược của ORG2' → partnered_with
+    3. Research: 'PRODUCT được xây dựng dựa trên nghiên cứu (hợp tác) với ORG' → developed_by
+    4. operates_in: ORG develops product in INDUSTRY → ORG operates_in INDUSTRY
+    """
+    rels: list[Relation] = []
+    orgs = [e for e in entities if e.type == "Organization"]
+    locs = [e for e in entities if e.type == "Location"]
     products = [e for e in entities if e.type == "Product"]
-    events   = [e for e in entities if e.type == "Event"]
+    industries = [e for e in entities if e.type == "Industry"]
 
-    # ── 1. Founded year: "Năm 2015, [ORG] được thành lập" ────
-    for m in re.finditer(
-        r"[Nn]\u0103m\s+(?P<year>\d{4})[,\s]+"
-        r"(?P<org_text>[A-Z\u00C0-\u1EF9][\w\s\u00C0-\u1EF9&,()\-]+?)"
-        r"\s+(?:\u0111\u01b0\u1ee3c\s+)?th\u00e0nh\s+l\u1eadp",
-        text, re.UNICODE,
-    ):
-        e = _best_entity_match(m.group("org_text").strip(), orgs, {"ORGANIZATION"})
-        if e:
-            _add(e, "Founded", m.group("year"))
+    def _add(src: Entity, tgt: Entity, lbl: str) -> bool:
+        if src.id == tgt.id:
+            return False
+        if _is_news_source(src.name) or _is_news_source(tgt.name):
+            return False
+        if not _validate_domain_range(lbl, src.type, tgt.type):
+            return False
+        pk = _pk(src.id, tgt.id)
+        if pk in existing_pk:
+            return False
+        existing_pk.add(pk)
+        rels.append(Relation(source=src.id, target=tgt.id, label=lbl))
+        return True
 
-    # ── 2. Headquarters from "Trụ sở chính ... đặt tại LOC" ──
-    for m in re.finditer(
-        r"[Tt]r\u1ee5\s+s\u1edf(?:\s+ch\u00ednh)?\s+(?:c\u1ee7a\s+(?:\S+\s+){1,3})?"
-        r"\u0111\u1eb7t\s+t\u1ea1i\s+(?P<loc>[^\n]+?)(?=\s*,\s+[a-z\u00e0-\u1eff]|[.\n]|$)",
-        text, re.UNICODE,
-    ):
-        loc_val = _norm(m.group("loc"))
-        sent = _get_sentence_of(m.start(), text)
-        best_pos_in_sent, best_e = -1, None
-        match_pos = m.start() - (text.rfind("\n", 0, m.start()) + 1)
-        for e in orgs:
-            names = [e.name] + getattr(e, "aliases", [])
-            for n in names:
-                occ = re.search(re.escape(n), sent[:match_pos], re.IGNORECASE)
-                if occ and occ.start() > best_pos_in_sent:
-                    best_pos_in_sent = occ.start()
-                    best_e = e
-        if best_e:
-            _add(best_e, "Headquarters", loc_val)
+    # ── (1) Appositive / compound headquartered_in ────────────────
+    _LOC_PREFIX = r"(?:(?:qu\u1eadn|huy\u1ec7n|t\u1ec9nh|tp\.?|th\u00e0nh\s+ph\u1ed1)\s+)?"
 
-    # ── 3. Headquarters from "ORG có trụ sở tại LOC" ────────
-    for m in re.finditer(
-        r"(?P<org_text>[A-Z\u00C0-\u1EF9][\w\s\u00C0-\u1EF9&,()]+?)"
-        r"\s+c\u00f3\s+tr\u1ee5\s+s\u1edf\s+t\u1ea1i\s+"
-        r"(?P<loc>[A-Z\u00C0-\u1EF9][\w\s,\u00C0-\u1EF9]+?)(?=\s+v\u00e0\s+|[,.\n]|$)",
-        text, re.UNICODE,
-    ):
-        e = _best_entity_match(m.group("org_text").strip(), orgs, {"ORGANIZATION"})
-        if e:
-            _add(e, "Headquarters", _norm(m.group("loc")))
+    # "ORG, một doanh nghiệp có trụ sở tại LOC"
+    appositive_hq = re.compile(
+        r"(?P<org>" + _NAME + r")"
+        r"(?:\s+Inc\.?|\s+Corp\.?|\s+Co\.?|\s+JSC\.?)?"
+        r",\s*(?:m\u1ed9t\s+)?(?:doanh\s+nghi\u1ec7p|c\u00f4ng\s+ty|t\u1ed5\s+ch\u1ee9c)"
+        r"(?:\s+[\w\s\u00C0-\u1EF9]{0,30}?)?"
+        r"\s+(?:c\u00f3\s+)?tr\u1ee5\s+s\u1edf\s+(?:ch\u00ednh\s+)?t\u1ea1i\s+"
+        + _LOC_PREFIX + r"(?P<loc>" + _NAME + r")",
+        re.UNICODE,
+    )
+    # "ORG [bất kỳ text <= 50 ký tự] và có trụ sở tại LOC"
+    compound_hq = re.compile(
+        r"(?P<org>" + _NAME + r")"
+        r"(?:[^.]{0,60}?)"
+        r"(?:v\u00e0\s+)?(?:c\u00f3\s+)?tr\u1ee5\s+s\u1edf\s+(?:ch\u00ednh\s+)?t\u1ea1i\s+"
+        + _LOC_PREFIX + r"(?P<loc>" + _NAME + r")",
+        re.UNICODE,
+    )
+    for sent in sentences:
+        for pat in [appositive_hq, compound_hq]:
+            for m in pat.finditer(sent):
+                org_e = _best_entity_match(m.group("org").strip(), orgs, {"ORGANIZATION"})
+                loc_e = _best_entity_match(m.group("loc").strip(), locs, {"LOCATION"})
+                if org_e and loc_e:
+                    _add(org_e, loc_e, "headquartered_in")
 
-    # ── 4. Headquarters from "doanh nghiệp có trụ sở tại LOC" ─
-    # Dùng closest-preceding-org để tránh gán nhầm (VD: Global AI thay vì SaoVietTech)
-    for m in re.finditer(
-        r"(?:m\u1ed9t\s+)?doanh\s+nghi\u1ec7p\s+c\u00f3\s+tr\u1ee5\s+s\u1edf\s+t\u1ea1i\s+"
-        r"(?P<loc>[A-Z\u00C0-\u1EF9][\w\s,\u00C0-\u1EF9]+?)(?=\s+v\u00e0\s+|[.\n]|$)",
-        text, re.UNICODE,
-    ):
-        loc_val = _norm(m.group("loc"))
-        sent = _get_sentence_of(m.start(), text)
-        match_pos = m.start() - (text.rfind("\n", 0, m.start()) + 1)
-        best_pos_in_sent, best_e = -1, None
-        for e in orgs:
-            names = [e.name] + getattr(e, "aliases", [])
-            for n in names:
-                occ = re.search(re.escape(n), sent[:match_pos], re.IGNORECASE)
-                if occ and occ.start() > best_pos_in_sent:
-                    best_pos_in_sent = occ.start()
-                    best_e = e
-        if best_e:
-            _add(best_e, "Headquarters", loc_val)
+    # ── (2) Compound "và là đối tác" ──────────────────────────────
+    # "Hikari Group có trụ sở tại Tokyo và là đối tác lâu năm của Sumida Holdings"
+    compound_partner = re.compile(
+        r"v\u00e0\s+l\u00e0\s+\u0111\u1ed1i\s+t\u00e1c"
+        r"\s+(?:l\u00e2u\s+(?:n\u0103m|d\u00e0i)|chi\u1ebfn\s+l\u01b0\u1ee3c)"
+        r"\s+(?:c\u1ee7a\s+|v\u1edbi\s+)?(?P<org2>" + _NAME + r")",
+        re.UNICODE,
+    )
+    for sent in sentences:
+        for m in compound_partner.finditer(sent):
+            match_start = m.start()
+            subj_org = None
+            best_pos = -1
+            for org in orgs:
+                pos = _find_pos(org, sent)
+                if 0 <= pos < match_start and pos > best_pos:
+                    best_pos = pos
+                    subj_org = org
+            if subj_org is None:
+                continue
+            org2_e = _best_entity_match(m.group("org2").strip(), orgs, {"ORGANIZATION"})
+            if org2_e:
+                _add(subj_org, org2_e, "partnered_with")
+                _add(org2_e, subj_org, "partnered_with")
 
-    # ── 5. Office opened year: "đến năm 2019 … mở thêm văn phòng … tại LOC" ──
-    for m in re.finditer(
-        r"\u0111\u1ebfn\s+n\u0103m\s+(?P<year>\d{4})\s+(?:h\u1ecd\s+)?m\u1edf(?:\s+th\u00eam)?"
-        r"(?:\s+v\u0103n\s+ph\u00f2ng[\w\s]*?)?\s+t\u1ea1i\s+"
-        r"(?P<loc>[A-Z\u00C0-\u1EF9][\w\s\u00C0-\u1EF9]*?)(?=[,.\n]|$)",
-        text, re.UNICODE,
-    ):
-        loc_name = _norm(m.group("loc"))
-        year = m.group("year")
-        sent = _get_sentence_of(m.start(), text)
-        for e in orgs:
-            names = [e.name] + getattr(e, "aliases", [])
-            if any(re.search(re.escape(n), sent, re.IGNORECASE) for n in names):
-                _add(e, f"{loc_name} Office Opened", year)
-                break
+    # ── (3) Research collaboration → developed_by ─────────────────
+    # "VisionX được xây dựng dựa trên các nghiên cứu hợp tác với ĐHBK Hà Nội"
+    research_dev = re.compile(
+        r"(?P<product>" + _NAME + r")"
+        r"\s+\u0111\u01b0\u1ee3c\s+(?:x\u00e2y\s+d\u1ef1ng|ph\u00e1t\s+tri\u1ec3n)"
+        r"(?:\s+d\u1ef1a\s+tr\u00ean)?"
+        r"(?:[^.]{0,80}?)"
+        r"(?:nghi\u00ean\s+c\u1ee9u\s+)?(?:h\u1ee3p\s+t\u00e1c\s+)?v\u1edbi\s+"
+        r"(?P<org>" + _NAME + r")",
+        re.UNICODE,
+    )
+    for sent in sentences:
+        for m in research_dev.finditer(sent):
+            prod_e = _best_entity_match(m.group("product").strip(), products, {"PRODUCT"})
+            org_e = _best_entity_match(m.group("org").strip(), orgs, {"ORGANIZATION"})
+            if prod_e and org_e:
+                _add(prod_e, org_e, "developed_by")
 
-    # ── 6. Revenue: "Trong năm tài chính YYYY, ORG báo cáo doanh thu đạt MONEY" ──
-    for m in re.finditer(
-        r"[Tt]rong\s+n\u0103m\s+t\u00e0i\s+ch\u00ednh\s+(?P<year>\d{4}),?\s+"
-        r"(?P<org_text>[A-Z\u00C0-\u1EF9][\w\s\u00C0-\u1EF9&,()]+?)\s+"
-        r"b\u00e1o\s+c\u00e1o\s+doanh\s+thu\s+\u0111\u1ea1t\s+"
-        r"(?P<revenue>\d[\d.,]*\s*(?:tri\u1ec7u|t\u1ef7|ngh\u00ecn)?\s*(?:USD|VND|\u0111\u1ed3ng)?)",
-        text, re.UNICODE,
-    ):
-        e = _best_entity_match(m.group("org_text").strip(), orgs, {"ORGANIZATION"})
-        if e:
-            _add(e, f"Revenue {m.group('year')}", _norm(m.group("revenue")))
+    # ── (4) operates_in: ORG + Industry co-occurrence in sentence ─
+    # Chỉ link khi ORG và Industry cùng trong câu VÀ có keyword rõ ràng
+    # Tránh false positive: "ORG cạnh tranh trong ngành X" không có nghĩa ORG operates_in X
+    _operate_explicit = re.compile(
+        r"(?:thu\u1ed9c\s+l\u0129nh\s+v\u1ef1c|chuy\u00ean\s+v\u1ec1|chuy\u00ean\s+trong"
+        r"|ho\u1ea1t\s+\u0111\u1ed9ng\s+trong\s+l\u0129nh\s+v\u1ef1c|trong\s+ng\u00e0nh"
+        r"|l\u0129nh\s+v\u1ef1c\s+ch\u00ednh|ng\u00e0nh\s+ch\u00ednh|thu\u1ed9c\s+ng\u00e0nh)",
+        re.UNICODE | re.IGNORECASE,
+    )
+    recent_orgs: list[Entity] = []
+    for sent in sentences:
+        sent_orgs = [e for e in orgs if _find_pos(e, sent) >= 0]
+        if sent_orgs:
+            recent_orgs = sent_orgs
+        if not _operate_explicit.search(sent):
+            continue
+        inds_here = [e for e in industries if _find_pos(e, sent) >= 0]
+        if not inds_here:
+            continue
+        orgs_to_link = sent_orgs if sent_orgs else []
+        for org_e in orgs_to_link:
+            for ind_e in inds_here:
+                _add(org_e, ind_e, "operates_in")
 
-    # ── 7. Role=Founder from founding sentence "bởi P1 và P2" ──
-    for m in re.finditer(
-        r"\u0111\u01b0\u1ee3c\s+th\u00e0nh\s+l\u1eadp(?:[^b\n]{0,80}?)"
-        r"b\u1edfi\s+(?P<p1>[A-Z\u00C0-\u1EF9][\w\s\u00C0-\u1EF9]+?)"
-        r"\s+v\u00e0\s+(?P<p2>[A-Z\u00C0-\u1EF9][\w\s\u00C0-\u1EF9]+?)"
-        r"(?=[,.\n]|$)",
-        text, re.UNICODE,
-    ):
-        for grp in ["p1", "p2"]:
-            pe = _best_entity_match(m.group(grp).strip(), persons, {"PERSON"})
-            if pe:
-                _add(pe, "Role", "Founder")
+    # ── (5) Date relations: established_in, occurred_in ──────────
+    dates = [e for e in entities if e.type == "Date"]
+    events = [e for e in entities if e.type == "Event"]
+    products_all = [e for e in entities if e.type == "Product"]
 
-    # Role=Founder from "sáng lập / đồng sáng lập ORG"
-    for m in re.finditer(
-        r"(?P<person>[A-Z\u00C0-\u1EF9][\w\s\u00C0-\u1EF9]+?)\s+"
-        r"(?:tr\u01b0\u1edbc\s+khi\s+)?(?:s\u00e1ng\s+l\u1eadp|\u0111\u1ed3ng\s+s\u00e1ng\s+l\u1eadp)\s+",
-        text, re.UNICODE,
-    ):
-        pe = _best_entity_match(m.group("person").strip(), persons, {"PERSON"})
-        if pe:
-            _add(pe, "Role", "Founder")
+    # "ORG được thành lập ... tại/vào năm DATE"  → established_in
+    _est_pat = re.compile(
+        r"(?P<org>" + _NAME + r")\s*(?:\([^)]+\))?\s*"
+        r"(?:\u0111\u01b0\u1ee3c\s+)?th\u00e0nh\s+l\u1eadp"
+        r"(?:[^,\n]{0,40}?)(?:t\u1ea1i|v\u00e0o|n\u0103m)\s+"
+        r"(?P<date>[Nn]\u0103m\s+\d{4}|\d{4}|\d{1,2}/\d{1,2}/\d{4})",
+        re.UNICODE,
+    )
+    for sent in sentences:
+        for m in _est_pat.finditer(sent):
+            org_e = _best_entity_match(m.group("org").strip(), orgs, {"ORGANIZATION"})
+            dt_e = _best_entity_match(m.group("date").strip(), dates, {"DATE"})
+            if org_e and dt_e:
+                _add(org_e, dt_e, "established_in")
 
-    # ── 8. Person prev employer + date range ─────────────────
-    for m in re.finditer(
-        r"(?P<person>[A-Z\u00C0-\u1EF9][\w\s\u00C0-\u1EF9]+?)\s+t\u1eebng\s+l\u00e0m\s+vi\u1ec7c\s+t\u1ea1i\s+"
-        r"(?P<org>[A-Z\u00C0-\u1EF9][\w\s\u00C0-\u1EF9&]+?)"
-        r"\s+t\u1eeb\s+n\u0103m\s+(?P<start>\d{4})\s+\u0111\u1ebfn\s+(?P<end>\d{4})",
-        text, re.UNICODE,
-    ):
-        pe = _best_entity_match(m.group("person").strip(), persons, {"PERSON"})
-        if pe:
-            _add(pe, "Previous Employer", m.group("org").strip())
-            _add(pe, "Experience Date", f"{m.group('start')}-{m.group('end')}")
+    # "Trong năm X, ORG ..." / "Năm X, ORG ..." → occurred_in
+    # Chỉ nối ORG/Event XUẤT HIỆN TRONG CÙNG CÂU có year intro (không lan sang câu khác)
+    _year_intro = re.compile(
+        r"^(?:[Tt]rong\s+)?(?:[Nn]\u0103m|[Tt]h\u00e1ng\s+\d+\s+n\u0103m)\s+"
+        r"(?:t\u00e0i\s+ch\u00ednh\s+)?(?P<date>\d{4})",
+        re.UNICODE,
+    )
+    for sent in sentences:
+        m = _year_intro.match(sent)
+        if not m:
+            continue
+        dt_text = m.group("date")
+        dt_e = next((d for d in dates if dt_text in d.name or d.name in dt_text), None)
+        if not dt_e:
+            continue
+        for org_e in [e for e in orgs if _find_pos(e, sent) >= 0]:
+            _add(org_e, dt_e, "occurred_in")
+        for ev_e in [e for e in events if _find_pos(e, sent) >= 0]:
+            _add(ev_e, dt_e, "occurred_in")
 
-    # ── 9. Org Industry from company name ────────────────────
-    for e in orgs:
-        name_low = e.name.lower()
-        if "c\u00f4ng ngh\u1ec7" in name_low or "technology" in name_low:
-            _add(e, "Industry", "C\u00f4ng ngh\u1ec7")
+    # "PRODUCT ra mắt vào ngày DATE" → occurred_in
+    _launch_date = re.compile(
+        r"(?P<product>" + _NAME + r")\s+(?:ch\u00ednh\s+th\u1ee9c\s+)?ra\s+m\u1eaft"
+        r"\s+v\u00e0o\s+(?:ng\u00e0y\s+)?(?P<date>[\d/]+)",
+        re.UNICODE,
+    )
+    for sent in sentences:
+        for m in _launch_date.finditer(sent):
+            prod_e = _best_entity_match(m.group("product").strip(), products_all, {"PRODUCT"})
+            dt_text = m.group("date").strip()
+            dt_e = next((d for d in dates if dt_text in d.name or d.name in dt_text), None)
+            if prod_e and dt_e:
+                _add(prod_e, dt_e, "occurred_in")
 
-    # ── 10. Contract value: "ký hợp đồng … với giá trị X" ───
-    for m in re.finditer(
-        r"k\u00fd\s+h\u1ee3p\s+\u0111\u1ed3ng(?:[^\n]{0,120}?)v\u1edbi\s+gi\u00e1\s+tr\u1ecb\s+"
-        r"(?P<value>\d[\d.,]*\s*(?:tri\u1ec7u|t\u1ef7|ngh\u00ecn)?\s*USD)",
-        text, re.UNICODE,
-    ):
-        value = _norm(m.group("value"))
-        sent  = _get_sentence_of(m.start(), text)
-        cho_m = re.search(
-            r"cho\s+(?P<buyer>[A-Z\u00C0-\u1EF9][\w\s\u00C0-\u1EF9&,()]+?)"
-            r"(?=\s+v\u1edbi|[,.\n(]|$)",
+    # ── (6) held_in: Event → Location ────────────────────────────
+    _held_pat = re.compile(
+        r"(?P<event>" + _NAME + r")\s+t\u1ed5\s+ch\u1ee9c"
+        r"\s+(?:\u1edf\s+|t\u1ea1i\s+)(?:TP\.?\s+)?(?P<loc>" + _NAME + r")",
+        re.UNICODE,
+    )
+    for sent in sentences:
+        for m in _held_pat.finditer(sent):
+            ev_e = _best_entity_match(m.group("event").strip(), events, {"EVENT"})
+            loc_e = _best_entity_match(m.group("loc").strip(), locs, {"LOCATION"})
+            if ev_e and loc_e:
+                _add(ev_e, loc_e, "held_in")
+        # "tổ chức ở TP. Hồ Chí Minh" — event is last seen event in sentence
+        m2 = re.search(
+            r"t\u1ed5\s+ch\u1ee9c\s+(?:\u1edf\s+|t\u1ea1i\s+)(?:TP\.?\s+)?(?P<loc>" + _NAME + r")",
             sent, re.UNICODE,
         )
-        if cho_m:
-            buyer_e = _best_entity_match(cho_m.group("buyer").strip(), orgs, {"ORGANIZATION"})
-            if buyer_e:
-                _add(buyer_e, "Contract Value", value)
+        if m2:
+            for ev_e in [e for e in events if _find_pos(e, sent) >= 0]:
+                loc_e = _best_entity_match(m2.group("loc").strip(), locs, {"LOCATION"})
+                if loc_e:
+                    _add(ev_e, loc_e, "held_in")
 
-    # ── 11. Media/Source role ─────────────────────────────────
-    for m in re.finditer(r"[Tt]heo\s+(?P<org>[A-Z\u00C0-\u1EF9][\w\s\u00C0-\u1EF9]+?)(?=[,\s])", text, re.UNICODE):
-        e = _best_entity_match(m.group("org").strip(), orgs, {"ORGANIZATION"})
-        if e:
-            _add(e, "Role", "Media/Source")
+    # ── (5b) Person occurred_in Date ──────────────────────────────
+    # "PERSON từng làm việc / công tác tại ORG từ năm X"
+    persons = [e for e in entities if e.type == "Person"]
+    _person_date_pat = re.compile(
+        r"(?P<person>" + _NAME + r")\s+"
+        r"(?:t\u1eebng\s+)?(?:l\u00e0m\s+vi\u1ec7c|c\u00f4ng\s+t\u00e1c)\s+t\u1ea1i"
+        r"(?:[^.]{0,60}?)t\u1eeb\s+n\u0103m\s+(?P<date>\d{4})",
+        re.UNICODE,
+    )
+    for sent in sentences:
+        for m in _person_date_pat.finditer(sent):
+            per_e = _best_entity_match(m.group("person").strip(), persons, {"PERSON"})
+            dt_text = m.group("date").strip()
+            dt_e = next((d for d in dates if dt_text in d.name or d.name in dt_text), None)
+            if per_e and dt_e:
+                _add(per_e, dt_e, "occurred_in")
 
-    for m in re.finditer(
-        r"ph\u1ecfng\s+v\u1ea5n\s+v\u1edbi\s+(?P<org>[A-Z\u00C0-\u1EF9][\w\s\u00C0-\u1EF9]+?)(?=[,.\n]|$)",
-        text, re.UNICODE,
-    ):
-        e = _best_entity_match(m.group("org").strip(), orgs, {"ORGANIZATION"})
-        if e:
-            _add(e, "Role", "Media/Interview Source")
+    # ── (5c) "Năm X, ORG" / "Tháng X năm Y, ORG" intro → occurred_in ─
+    # Chỉ link trong cùng câu, không cross-sentence
+    _temporal_intro = re.compile(
+        r"^(?:[Tt]rong\s+)?(?:[Tt]h\u00e1ng\s+\d+\s+)?[Nn]\u0103m\s+"
+        r"(?:t\u00e0i\s+ch\u00ednh\s+)?(?P<date>\d{4})",
+        re.UNICODE,
+    )
+    for sent in sentences:
+        m = _temporal_intro.match(sent)
+        if not m:
+            continue
+        dt_year = m.group("date")
+        dt_e = next((d for d in dates if dt_year in d.name), None)
+        if not dt_e:
+            continue
+        # Link only entities appearing in THIS sentence
+        for org_e in [e for e in orgs if _find_pos(e, sent) >= 0]:
+            _add(org_e, dt_e, "occurred_in")
+        for ev_e in [e for e in events if _find_pos(e, sent) >= 0]:
+            _add(ev_e, dt_e, "occurred_in")
+        for prod_e in [e for e in products_all if _find_pos(e, sent) >= 0]:
+            _add(prod_e, dt_e, "occurred_in")
 
-    # ── 12. Competitor role ───────────────────────────────────
-    for m in re.finditer(
-        r"\u0111\u1ed1i\s+th\u1ee7(?:\s+nh\u01b0)?\s+(?P<list>[A-Z\u00C0-\u1EF9][\w\s,\u00C0-\u1EF9&]+?)(?=[,.\n]|$)",
-        text, re.UNICODE,
-    ):
-        for part in re.split(r"\s+v\u00e0\s+|,\s*", m.group("list")):
-            e = _best_entity_match(part.strip(), orgs, {"ORGANIZATION"})
-            if e:
-                _add(e, "Role", "Competitor")
+    # ── (5d) Bare "năm X" fallback — same-sentence only ──────────
+    # Link orphan date to closest ORG/PERSON in the SAME sentence
+    _year_bare = re.compile(r"\bn\u0103m\s+(?P<y>\d{4})\b", re.UNICODE)
+    for sent in sentences:
+        for m in _year_bare.finditer(sent):
+            yr = m.group("y")
+            dt_e = next((d for d in dates if yr in d.name), None)
+            if dt_e is None:
+                continue
+            if any(r.source == dt_e.id or r.target == dt_e.id for r in rels):
+                continue
+            # Closest entity in same sentence only
+            cands = [e for e in orgs + persons + products_all if _find_pos(e, sent) >= 0]
+            if not cands:
+                continue
+            yr_pos = m.start()
+            closest = min(cands, key=lambda e: abs(_find_pos(e, sent) - yr_pos))
+            _add(closest, dt_e, "occurred_in")
 
-    # ── 13. Product launch date ───────────────────────────────
-    for m in re.finditer(
-        r"(?P<product>[A-Z][\w]+)\s+(?:ch\u00ednh\s+th\u1ee9c\s+)?ra\s+m\u1eaft\s+"
-        r"(?:v\u00e0o\s+ng\u00e0y\s+)?(?P<date>\d{1,2}/\d{1,2}/\d{4})",
-        text, re.UNICODE,
-    ):
-        product_e = _best_entity_match(m.group("product").strip(), products, {"PRODUCT"})
-        if product_e:
-            _add(product_e, "Launch Date", m.group("date"))
+    # ── (7) has_revenue / has_value: Org/Product → Money ─────────
+    moneys = [e for e in entities if e.type == "Money"]
 
-    # ── 14. Product platform: "X sử dụng nền tảng Y" ─────────
-    for m in re.finditer(
-        r"(?P<product>[A-Z][\w]+)\s+s\u1eed\s+d\u1ee5ng\s+n\u1ec1n\s+t\u1ea3ng\s+"
-        r"(?P<platform>[A-Z\u00C0-\u1EF9][\w\s\u00C0-\u1EF9]+?)(?=\s+do|[,.\n]|$)",
-        text, re.UNICODE,
-    ):
-        product_e = _best_entity_match(m.group("product").strip(), products, {"PRODUCT"})
-        if product_e:
-            _add(product_e, "Technology Platform", _norm(m.group("platform")))
+    # Chung: helper để tìm Money entity từ text fragment
+    def _match_money(text_fragment: str) -> Optional[Entity]:
+        frag = text_fragment.strip()
+        digits = re.findall(r"[\d,\.]+", frag)
+        return next(
+            (mo for mo in moneys
+             if frag in mo.name or mo.name in frag
+             or any(t in mo.name for t in frag.split() if len(t) > 1)
+             or any(d in mo.name for d in digits if len(d) > 1)),
+            None,
+        )
 
-    # "Sản phẩm này sử dụng nền tảng Y" — pronoun co-reference: find product in same paragraph
-    for m in re.finditer(
-        r"[Ss]\u1ea3n\s+ph\u1ea9m\s+n\u00e0y\s+s\u1eed\s+d\u1ee5ng\s+n\u1ec1n\s+t\u1ea3ng\s+"
-        r"(?P<platform>[A-Z\u00C0-\u1EF9][\w\s\u00C0-\u1EF9]+?)(?=\s+do|[,.\n]|$)",
-        text, re.UNICODE,
-    ):
-        para_start = text.rfind("\n\n", 0, m.start())
-        para_text = text[para_start if para_start >= 0 else 0 : m.end() + 50]
-        for prod_e in products:
-            names = [prod_e.name] + getattr(prod_e, "aliases", [])
-            if any(re.search(re.escape(n), para_text, re.IGNORECASE) for n in names):
-                _add(prod_e, "Technology Platform", _norm(m.group("platform")))
-                break
+    # has_revenue: "ORG báo cáo/ghi nhận/đạt doanh thu X"
+    _revenue_pat = re.compile(
+        r"(?P<org>" + _NAME + r")\s+"
+        r"(?:b\u00e1o\s+c\u00e1o|ghi\s+nh\u1eadn|thu\s+v\u1ec1)"
+        r"(?:\s+[\w\s]{0,20}?)?doanh\s+thu"
+        r"(?:\s+\u0111\u1ea1t)?\s+"
+        r"(?P<money>[\d][[\d,\.]*\s*(?:tri\u1ec7u|t\u1ef7|ngh\u00ecn)?\s*(?:USD|VND|VN\u0110|\u0111\u1ed3ng|\$)?)",
+        re.UNICODE | re.IGNORECASE,
+    )
+    for sent in sentences:
+        for m in _revenue_pat.finditer(sent):
+            org_e = _best_entity_match(m.group("org").strip(), orgs, {"ORGANIZATION"})
+            mn_e = _match_money(m.group("money"))
+            if org_e and mn_e:
+                _add(org_e, mn_e, "has_revenue")
 
-    # ── 15. Product developer (passive): "X do [nhóm nghiên cứu của] ORG phát triển" ──
-    for m in re.finditer(
-        r"(?P<product>[A-Z\u00C0-\u1EF9][\w\s\u00C0-\u1EF9]+?)\s+do\s+"
-        r"(?:nh\u00f3m\s+nghi\u00ean\s+c\u1ee9u\s+c\u1ee7a\s+)?(?P<org>[A-Z\u00C0-\u1EF9][\w\s\u00C0-\u1EF9&]+?)"
-        r"\s+ph\u00e1t\s+tri\u1ec3n",
-        text, re.UNICODE,
-    ):
-        product_e = _best_entity_match(m.group("product").strip(), products, {"PRODUCT"})
-        if product_e:
-            _add(product_e, "Developer", _norm(m.group("org")))
+    # has_value: "cho ORG với giá trị X" (buyer gets value)
+    _value_buyer = re.compile(
+        r"cho\s+(?P<subj>" + _NAME + r")\s*(?:\([^)]+\))?\s*"
+        r"v\u1edbi\s+(?:gi\u00e1\s+tr\u1ecb|tr\u1ecb\s+gi\u00e1)\s+"
+        r"(?P<money>[\d][[\d,\.]*\s*(?:tri\u1ec7u|t\u1ef7|ngh\u00ecn)?\s*(?:USD|VND|VN\u0110|\u0111\u1ed3ng|\$)?)",
+        re.UNICODE | re.IGNORECASE,
+    )
+    # has_value: "với giá trị X" bare — link to closest preceding ORG/PRODUCT in same sentence
+    _value_bare = re.compile(
+        r"v\u1edbi\s+(?:gi\u00e1\s+tr\u1ecb|tr\u1ecb\s+gi\u00e1)\s+"
+        r"(?P<money>[\d][[\d,\.]*\s*(?:tri\u1ec7u|t\u1ef7|ngh\u00ecn)?\s*(?:USD|VND|VN\u0110|\u0111\u1ed3ng|\$)?)",
+        re.UNICODE | re.IGNORECASE,
+    )
+    for sent in sentences:
+        matched_money: set[str] = set()
+        for m in _value_buyer.finditer(sent):
+            mn_e = _match_money(m.group("money"))
+            if not mn_e:
+                continue
+            subj = _best_entity_match(m.group("subj").strip(), orgs + products_all, None)
+            if subj and _add(subj, mn_e, "has_value"):
+                matched_money.add(mn_e.id)
 
-    # ── 16. Product research basis ────────────────────────────
-    for m in re.finditer(
-        r"(?P<product>[A-Z][\w]+)\s+\u0111\u01b0\u1ee3c\s+x\u00e2y\s+d\u1ef1ng\s+d\u1ef1a\s+tr\u00ean"
-        r"(?:[^\n]{0,60}?)v\u1edbi\s+(?P<org>[A-Z\u00C0-\u1EF9][\w\s\u00C0-\u1EF9&,]+?)(?=[,.\n]|$)",
-        text, re.UNICODE,
-    ):
-        product_e = _best_entity_match(m.group("product").strip(), products, {"PRODUCT"})
-        if product_e:
-            _add(product_e, "Development Basis",
-                 f"Nghi\u00ean c\u1ee9u h\u1ee3p t\u00e1c v\u1edbi {_norm(m.group('org'))}")
+        for m in _value_bare.finditer(sent):
+            mn_e = _match_money(m.group("money"))
+            if not mn_e or mn_e.id in matched_money:
+                continue
+            match_pos = m.start()
+            # Find closest preceding ORG or PRODUCT in same sentence
+            cands = [e for e in orgs + products_all if _find_pos(e, sent) >= 0]
+            if not cands:
+                continue
+            closest = min(cands, key=lambda e: abs(_find_pos(e, sent) - match_pos))
+            if _add(closest, mn_e, "has_value"):
+                matched_money.add(mn_e.id)
 
-    # ── 17. Event date + location ─────────────────────────────
-    for e in events:
-        names = [e.name] + getattr(e, "aliases", [])
-        for n in names:
-            for em in re.finditer(re.escape(n), text, re.IGNORECASE):
-                ctx = text[max(0, em.start() - 120) : em.end() + 180]
-                date_m = re.search(r"ng\u00e0y\s+(?P<date>\d{1,2}/\d{1,2}/\d{4})", ctx, re.UNICODE)
-                if date_m:
-                    _add(e, "Date", date_m.group("date"))
-                loc_m = re.search(
-                    r"(?:t\u1ed5\s+ch\u1ee9c\s+\u1edf|t\u1ea1i)\s+"
-                    r"(?P<loc>(?:[A-Z\w]+\.\s+)?[A-Z\u00C0-\u1EF9][\w\u00C0-\u1EF9]+"
-                    r"(?:\s+[A-Z\u00C0-\u1EF9][\w\u00C0-\u1EF9]+)*)",
-                    ctx, re.UNICODE,
-                )
-                if loc_m:
-                    _add(e, "Location", _norm(loc_m.group("loc")))
+    # ── (∞) Orphan fallback — SAME-SENTENCE only ─────────────────
+    # Nối entity mồ côi vào entity gần nhất TRONG CÙNG CÂU.
+    # KHÔNG dùng global fallback để tránh kết nối sai với data mới.
+    # subject → orphan (orphan_is_target=True)
+    _ORPHAN_FALLBACK: dict[str, tuple[list[Entity], str]] = {
+        "Date":    (orgs + products_all + events, "occurred_in"),
+        "Money":   (orgs + products_all,          "has_value"),
+        "Percent": (orgs + products_all,          "has_value"),
+        "Location":(events,                       "held_in"),
+    }
+    for fb_type, (fb_cands, fb_lbl) in _ORPHAN_FALLBACK.items():
+        for fb_e in [e for e in entities if e.type == fb_type]:
+            if any(r.source == fb_e.id or r.target == fb_e.id for r in rels):
+                continue
+            best_target2: Optional[Entity] = None
+            best_dist2 = 999999
+            for sent in sentences:
+                fb_pos = _find_pos(fb_e, sent)
+                if fb_pos < 0:
+                    continue
+                for cand in fb_cands:
+                    if not _validate_domain_range(fb_lbl, cand.type, fb_e.type):
+                        continue
+                    c_pos = _find_pos(cand, sent)
+                    if c_pos < 0:
+                        continue
+                    dist = abs(fb_pos - c_pos)
+                    if dist < best_dist2:
+                        best_dist2 = dist
+                        best_target2 = cand
+            # Only link if found in same sentence (best_dist2 < 999999)
+            if best_target2 and best_dist2 < 999999:
+                _add(best_target2, fb_e, fb_lbl)
+
+    return rels
 
 
 # ═══════════════════════════════════════════════════════════════════
-# §9.5 — Multi-entity pattern extractor
+# §9.64 — Final orphan connector
+# Đảm bảo mọi entity đều có ít nhất 1 edge, dùng expanding-window search
+# ═══════════════════════════════════════════════════════════════════
+
+# Quy tắc kết nối theo type của orphan:
+# (relation, partner_types, orphan_is_subject)
+# orphan_is_subject=True  → Relation(orphan, partner, label)
+# orphan_is_subject=False → Relation(partner, orphan, label)
+_ORPHAN_RULES: dict[str, list[tuple[str, set[str], bool]]] = {
+    "Date": [
+        ("occurred_in", {"Organization", "Event", "Product"}, False),
+    ],
+    "Money": [
+        ("has_revenue", {"Organization"}, False),
+        ("has_value",   {"Organization", "Product"}, False),
+    ],
+    "Percent": [
+        ("has_value", {"Organization", "Product"}, False),
+    ],
+    "Location": [
+        ("held_in",         {"Event"},         False),
+        ("headquartered_in",{"Organization"},  False),
+        ("has_office",      {"Organization"},  False),
+    ],
+    "Industry": [
+        ("operates_in", {"Organization"}, False),
+    ],
+    "Product": [
+        ("developed_by", {"Organization"}, True),
+        ("launched_at",  {"Event"},        True),
+    ],
+    "Event": [
+        ("held_in",    {"Location"},    True),
+        ("occurred_in",{"Date"},        True),
+        # Nếu không có Location/Date, link Event với Org qua occurred_in (ngược chiều)
+        ("occurred_in",{"Organization","Product"}, False),
+    ],
+    "Person": [
+        ("former_employee", {"Organization"}, True),
+        ("founded",         {"Organization"}, True),
+    ],
+    "Organization": [
+        ("partnered_with",   {"Organization"}, True),
+        ("headquartered_in", {"Location"},     True),
+        ("operates_in",      {"Industry"},     True),
+    ],
+}
+
+
+def _connect_all_orphans(
+    entities: list[Entity],
+    relations: list[Relation],
+    sentences: list[str],
+    existing_pk: set[tuple[str, str]],
+) -> list[Relation]:
+    """Tầng cuối — kết nối mọi node còn mồ côi.
+    Chiến lược tìm partner:
+      1. Cùng câu (ưu tiên entity đã có edge)
+      2. Câu lân cận (±2 câu)
+      3. Toàn document (khoảng cách character)
+    Luôn validate domain/range trước khi tạo edge.
+    """
+    new_rels: list[Relation] = []
+    connected: set[str] = {r.source for r in relations} | {r.target for r in relations}
+
+    def _add_orphan(src: Entity, tgt: Entity, lbl: str) -> bool:
+        if src.id == tgt.id:
+            return False
+        if _is_news_source(src.name) or _is_news_source(tgt.name):
+            return False
+        if not _validate_domain_range(lbl, src.type, tgt.type):
+            return False
+        pk = _pk(src.id, tgt.id)
+        if pk in existing_pk:
+            return False
+        existing_pk.add(pk)
+        new_rels.append(Relation(source=src.id, target=tgt.id, label=lbl))
+        connected.add(src.id)
+        connected.add(tgt.id)
+        return True
+
+    # Pre-compute sentence index for each entity
+    def sent_idx(e: Entity) -> int:
+        for i, s in enumerate(sentences):
+            if _find_pos(e, s) >= 0:
+                return i
+        return -1
+
+    sent_map: dict[str, int] = {e.id: sent_idx(e) for e in entities}
+
+    def proximity_key(orphan: Entity, partner: Entity) -> tuple:
+        oi = sent_map.get(orphan.id, -1)
+        pi = sent_map.get(partner.id, -1)
+        if oi >= 0 and pi >= 0:
+            dist = abs(oi - pi)
+        elif oi < 0 and pi < 0:
+            dist = 0
+        else:
+            dist = 999          # one not found → penalise
+        already_connected = 0 if partner.id in connected else 1
+        return (dist, already_connected)
+
+    orphans = [e for e in entities if e.id not in connected]
+
+    for orphan in orphans:
+        rules = _ORPHAN_RULES.get(orphan.type, [])
+        linked = False
+
+        for rel_lbl, partner_types, orphan_is_subject in rules:
+            if linked:
+                break
+            # Gather eligible partners
+            partners = [
+                e for e in entities
+                if e.type in partner_types and e.id != orphan.id
+            ]
+            if not partners:
+                continue
+
+            # Sort by proximity (sentence distance), prefer connected partners
+            partners.sort(key=lambda p: proximity_key(orphan, p))
+
+            for partner in partners:
+                if orphan_is_subject:
+                    ok = _add_orphan(orphan, partner, rel_lbl)
+                else:
+                    ok = _add_orphan(partner, orphan, rel_lbl)
+                if ok:
+                    linked = True
+                    break
+
+    return new_rels
+
+
+# ═══════════════════════════════════════════════════════════════════
+# §9.65 — Keyword-bridge extractor
+# Tìm relation bằng cách tìm keyword giữa 2 entities đã biết trong câu.
+# Không dùng _NAME regex để capture — tránh miss khi tên chứa lowercase.
+# ═══════════════════════════════════════════════════════════════════
+
+# Keyword patterns theo relation type
+# Format: (label, keyword_regex, subj_types, obj_types, allow_reverse)
+# allow_reverse=True: thử chiều ngược nếu không tìm thấy chiều thuận
+#                     → dùng cho quan hệ có thể xuất hiện ở hai hướng trong câu
+_KW_BRIDGE: list[tuple[str, re.Pattern, set[str], set[str], bool]] = [
+    # Bidirectional: subject/object có thể xuất hiện ở bất kỳ vị trí nào quanh keyword
+    ("partnered_with",
+     re.compile(
+         r"h\u1ee3p\s+t\u00e1c|li\u00ean\s+k\u1ebft|li\u00ean\s+doanh|li\u00ean\s+minh"
+         r"|k\u00fd\s+th\u1ecfa\s+thu\u1eadn|k\u00fd\s+h\u1ee3p\s+\u0111\u1ed3ng\s+h\u1ee3p\s+t\u00e1c",
+         re.IGNORECASE | re.UNICODE),
+     {"Organization"}, {"Organization"}, True),
+
+    ("competitor_of",
+     re.compile(
+         r"\u0111\u1ed1i\s+th\u1ee7|c\u1ea1nh\s+tranh|v\u01b0\u1ee3t\s+m\u1eb7t",
+         re.IGNORECASE | re.UNICODE),
+     {"Organization"}, {"Organization"}, True),
+
+    # Directional: subject luôn TRƯỚC keyword trong câu xuôi
+    ("headquartered_in",
+     re.compile(
+         r"tr\u1ee5\s+s\u1edf\s+t\u1ea1i|\u0111\u1eb7t\s+t\u1ea1i"
+         r"|t\u1ecda\s+l\u1ea1c\s+t\u1ea1i|c\u00f3\s+\u0111\u1ecba\s+ch\u1ec9\s+t\u1ea1i"
+         r"|th\u00e0nh\s+l\u1eadp\s+t\u1ea1i|s\u00e1ng\s+l\u1eadp\s+t\u1ea1i",
+         re.IGNORECASE | re.UNICODE),
+     {"Organization"}, {"Location"}, False),
+
+    ("has_office",
+     re.compile(
+         r"v\u0103n\s+ph\u00f2ng(?:\s+\u0111\u1ea1i\s+di\u1ec7n)?|chi\s+nh\u00e1nh",
+         re.IGNORECASE | re.UNICODE),
+     {"Organization"}, {"Location"}, False),
+
+    # founded: reverse OK (passive "được thành lập bởi")
+    ("founded",
+     re.compile(
+         r"s\u00e1ng\s+l\u1eadp|\u0111\u1ed3ng\s+s\u00e1ng\s+l\u1eadp|th\u00e0nh\s+l\u1eadp|kh\u1edfi\s+x\u01b0\u1edbng",
+         re.IGNORECASE | re.UNICODE),
+     {"Person"}, {"Organization"}, True),
+
+    # developed_by: reverse OK (passive "được phát triển bởi")
+    ("developed_by",
+     re.compile(
+         r"ph\u00e1t\s+tri\u1ec3n|x\u00e2y\s+d\u1ef1ng|thi\u1ebft\s+k\u1ebf",
+         re.IGNORECASE | re.UNICODE),
+     {"Product"}, {"Organization"}, True),
+
+    ("launched_at",
+     re.compile(
+         r"ra\s+m\u1eaft|gi\u1edbi\s+thi\u1ec7u|c\u00f4ng\s+b\u1ed1",
+         re.IGNORECASE | re.UNICODE),
+     {"Product"}, {"Event"}, False),
+
+    ("held_in",
+     re.compile(
+         r"t\u1ed5\s+ch\u1ee9c|di\u1ec5n\s+ra|khai\s+m\u1ea1c",
+         re.IGNORECASE | re.UNICODE),
+     {"Event"}, {"Location"}, False),
+
+    ("former_employee",
+     re.compile(
+         r"t\u1eebng\s+l\u00e0m\s+vi\u1ec7c|t\u1eebng\s+c\u00f4ng\s+t\u00e1c"
+         r"|t\u1eebng\s+gi\u1eef\s+ch\u1ee9c|c\u1ef1u",
+         re.IGNORECASE | re.UNICODE),
+     {"Person"}, {"Organization"}, False),
+
+    ("operates_in",
+     re.compile(
+         r"thu\u1ed9c\s+l\u0129nh\s+v\u1ef1c|chuy\u00ean\s+v\u1ec1|chuy\u00ean\s+trong"
+         r"|ho\u1ea1t\s+\u0111\u1ed9ng\s+trong\s+l\u0129nh\s+v\u1ef1c|thu\u1ed9c\s+ng\u00e0nh",
+         re.IGNORECASE | re.UNICODE),
+     {"Organization"}, {"Industry"}, False),
+
+    ("has_revenue",
+     re.compile(
+         r"doanh\s+thu|thu\s+nh\u1eadp|thu\s+v\u1ec1",
+         re.IGNORECASE | re.UNICODE),
+     {"Organization"}, {"Money"}, False),
+
+    ("has_value",
+     re.compile(
+         r"gi\u00e1\s+tr\u1ecb|tr\u1ecb\s+gi\u00e1|gi\u00e1\s+h\u1ee3p\s+\u0111\u1ed3ng",
+         re.IGNORECASE | re.UNICODE),
+     {"Organization", "Product"}, {"Money"}, False),
+
+    # established_in: KHÔNG reverse để tránh link nhầm date từ context khác
+    ("established_in",
+     re.compile(
+         r"(?<!\w)th\u00e0nh\s+l\u1eadp\s+(?:n\u0103m|v\u00e0o|t\u1eeb)"
+         r"|ra\s+\u0111\u1eddi\s+(?:n\u0103m|v\u00e0o)"
+         r"|s\u00e1ng\s+l\u1eadp\s+(?:n\u0103m|v\u00e0o)",
+         re.IGNORECASE | re.UNICODE),
+     {"Organization"}, {"Date"}, False),
+
+    # occurred_in: chỉ link org/event khi date rõ ràng sau keyword
+    ("occurred_in",
+     re.compile(
+         r"v\u00e0o\s+n\u0103m\s+\d{4}|trong\s+n\u0103m\s+(?:t\u00e0i\s+ch\u00ednh\s+)?\d{4}",
+         re.IGNORECASE | re.UNICODE),
+     {"Organization", "Event", "Product"}, {"Date"}, False),
+]
+
+
+def _extract_keyword_bridge(
+    entities: list[Entity],
+    sentences: list[str],
+    existing_pk: set[tuple[str, str]],
+) -> list[Relation]:
+    """Tìm relation bằng keyword-bridge:
+    1. Tìm keyword trong câu
+    2. Tìm entity trước keyword (subject) và sau keyword (object)
+    3. Áp dụng domain/range filter để xác định chiều quan hệ
+    Không dùng _NAME regex → hoạt động với mọi cấu trúc tên tiếng Việt.
+    """
+    rels: list[Relation] = []
+
+    def _add(src: Entity, tgt: Entity, lbl: str) -> bool:
+        if src.id == tgt.id:
+            return False
+        if _is_news_source(src.name) or _is_news_source(tgt.name):
+            return False
+        if not _validate_domain_range(lbl, src.type, tgt.type):
+            return False
+        pk = _pk(src.id, tgt.id)
+        if pk in existing_pk:
+            return False
+        existing_pk.add(pk)
+        rels.append(Relation(source=src.id, target=tgt.id, label=lbl))
+        return True
+
+    # Pronoun/generic subject resolution: "Công ty", "Họ", "Tập đoàn" → last seen org
+    _PRONOUN_SUBJ = re.compile(
+        r"^(?:[Hh]\u1ecd|[Cc]\u00f4ng\s+ty|[Tt]\u1eadp\s+\u0111o\u00e0n|[Cc]\u00f4ng\s+ty\s+n\u00e0y"
+        r"|[Cc]\u00f4ng\s+ty\s+tr\u00ean|[Nn]h\u00e0\s+m\u00e1y)\b",
+        re.UNICODE,
+    )
+    orgs_in_context = [e for e in entities if e.type == "Organization"]
+    last_seen_org: Optional[Entity] = None
+
+    for sent in sentences:
+        # Update last seen org from this sentence
+        for e in orgs_in_context:
+            if _find_pos(e, sent) >= 0:
+                last_seen_org = e
+
+        # Pre-compute entity positions in sentence
+        ent_positions: list[tuple[int, Entity]] = []
+        for e in entities:
+            p = _find_pos(e, sent)
+            if p >= 0:
+                ent_positions.append((p, e))
+
+        # If sentence starts with pronoun subject, inject last_seen_org at position 0
+        if _PRONOUN_SUBJ.match(sent) and last_seen_org and \
+                not any(e.type == "Organization" for _, e in ent_positions):
+            ent_positions.insert(0, (0, last_seen_org))
+
+        if len(ent_positions) < 2:
+            continue
+        ent_positions.sort(key=lambda x: x[0])
+
+        for label, kw_pat, subj_types, obj_types, allow_reverse in _KW_BRIDGE:
+            for km in kw_pat.finditer(sent):
+                kw_start = km.start()
+                kw_end = km.end()
+
+                # Entities BEFORE the keyword (potential subjects)
+                before = [(p, e) for p, e in ent_positions if p < kw_start and e.type in subj_types]
+                # Entities AFTER the keyword (potential objects)
+                after  = [(p, e) for p, e in ent_positions if p >= kw_end and e.type in obj_types]
+
+                if before and after:
+                    # Closest subject (rightmost before keyword)
+                    subj_e = max(before, key=lambda x: x[0])[1]
+                    # Closest object (leftmost after keyword)
+                    obj_e  = min(after,  key=lambda x: x[0])[1]
+                    _add(subj_e, obj_e, label)
+                elif allow_reverse:
+                    # Try reverse direction only for bidirectional or passive relations
+                    before_rev = [(p, e) for p, e in ent_positions if p < kw_start and e.type in obj_types]
+                    after_rev  = [(p, e) for p, e in ent_positions if p >= kw_end and e.type in subj_types]
+                    if before_rev and after_rev:
+                        subj_e = min(after_rev, key=lambda x: x[0])[1]
+                        obj_e  = max(before_rev, key=lambda x: x[0])[1]
+                        _add(subj_e, obj_e, label)
+
+    return rels
+
+
+# ═══════════════════════════════════════════════════════════════════
+# §9.7 — Multi-entity pattern extractor
 # Xử lý các cấu trúc danh sách: 'bởi A và B', 'như A và B'
 # ═══════════════════════════════════════════════════════════════════
 
@@ -1080,21 +1713,15 @@ def _extract_multi_entity_relations(
     """
     Xử lý các cấu trúc 1-to-many khó dùng regex 2-group thông thưởng:
       1. 'ORG được thành lập ... bởi PERSON1 và PERSON2'
-         → 2 relations founded_by (ORG → PERSON1, ORG → PERSON2)
+         → 2 relations founded (PERSON1,2 → ORG)
       2. '... cạnh tranh với các đối thủ như ORG1 và ORG2'
          → 2 relations competitor_of (ORG_main → ORG1,2)
-      3. 'ký hợp đồng cung cấp PRODUCT cho ORG'
-         → supplied_product_to (supplier_org → buyer_org)
-      4. 'hai bên cùng phát triển PRODUCT'
-         → developed (org1 → product, org2 → product)
     """
     rels: list[Relation] = []
 
-    persons  = [e for e in entities if e.type == "Person"]
-    orgs     = [e for e in entities if e.type == "Organization"]
-    products = [e for e in entities if e.type == "Product"]
-
     # -- (1) Multi-founder: 'bởi PERSON1 và PERSON2'
+    persons = [e for e in entities if e.type == "Person"]
+    orgs    = [e for e in entities if e.type == "Organization"]
     for m in re.finditer(
         r"(?P<org>[A-Z\u00C0-\u1EF9][\w\s,\u00C0-\u1EF9&]+?)"
         r"\s*(?:\([^)]+\))?\s*"
@@ -1109,13 +1736,13 @@ def _extract_multi_entity_relations(
         per2_e = _best_entity_match(m.group("p2").strip(), persons, {"PERSON"})
         for pe in [per1_e, per2_e]:
             if pe and org_e and pe.id != org_e.id:
-                # True output: ORG --(founded_by)--> PERSON
-                pk = _pk(org_e.id, pe.id)
+                pk = _pk(pe.id, org_e.id)
                 if pk not in existing_pk:
                     existing_pk.add(pk)
-                    rels.append(Relation(source=org_e.id, target=pe.id, label="founded_by"))
+                    rels.append(Relation(source=pe.id, target=org_e.id, label="founded"))
 
     # -- (2) Competitor list: 'như ORG1 và ORG2'
+    # Tìm câu chứa 'cạnh tranh ... như' và extract tất cả ORG được mention sau 'như'
     for m in re.finditer(
         r"(?P<main>[A-Z\u00C0-\u1EF9][\w\s\u00C0-\u1EF9&]+?)"
         r"(?:\s+m\u1edf\s+r\u1ed9ng)?\s+c\u1ee7ng\s+c\u1ed1\s+v\u1ecb\s+th\u1ebf\s+c\u1ea1nh\s+tranh"
@@ -1125,7 +1752,8 @@ def _extract_multi_entity_relations(
         main_e = _best_entity_match(m.group("main").strip(), orgs, {"ORGANIZATION"})
         if not main_e:
             continue
-        parts = re.split(r'\s+v\u00e0\s+|,\s*', m.group("oc"))
+        # Tách danh sách '... và ...'
+        parts = re.split(r'\s+và\s+|,\s*', m.group("oc"))
         for part in parts:
             competitor_e = _best_entity_match(part.strip(), orgs, {"ORGANIZATION"})
             if competitor_e and competitor_e.id != main_e.id:
@@ -1133,61 +1761,6 @@ def _extract_multi_entity_relations(
                 if pk not in existing_pk:
                     existing_pk.add(pk)
                     rels.append(Relation(source=main_e.id, target=competitor_e.id, label="competitor_of"))
-
-    # -- (3) Supply contract: 'ký hợp đồng cung cấp ... cho ORG'
-    _supply_pat = re.compile(
-        r"k\u00fd\s+h\u1ee3p\s+\u0111\u1ed3ng\s+cung\s+c\u1ea5p"
-        r"(?:[^\n]{0,80}?)cho\s+(?P<buyer>[A-Z\u00C0-\u1EF9][\w\s\u00C0-\u1EF9&,]+?)"
-        r"(?=\s+v\u1edbi|[,.\n(]|$)",
-        re.UNICODE,
-    )
-    for line in text.split("\n"):
-        for sm in _supply_pat.finditer(line):
-            buyer_text = sm.group("buyer").strip()
-            buyer_e = _best_entity_match(buyer_text, orgs, {"ORGANIZATION"})
-            if not buyer_e:
-                continue
-            ky_pos = sm.start()
-            best_pos, supplier_e = -1, None
-            for org_e in orgs:
-                if org_e.id == buyer_e.id:
-                    continue
-                for n in [org_e.name] + getattr(org_e, "aliases", []):
-                    occ = re.search(re.escape(n), line[:ky_pos], re.IGNORECASE)
-                    if occ and occ.start() > best_pos:
-                        best_pos, supplier_e = occ.start(), org_e
-            if supplier_e:
-                pk = _pk(supplier_e.id, buyer_e.id)
-                if pk not in existing_pk:
-                    existing_pk.add(pk)
-                    rels.append(Relation(source=supplier_e.id, target=buyer_e.id, label="supplied_product_to"))
-
-    # -- (4) Co-develop: 'hai bên cùng phát triển ... PRODUCT'
-    for m in re.finditer(
-        r"hai\s+b\u00ean\s+c\u00f9ng\s+ph\u00e1t\s+tri\u1ec3n"
-        r"(?:[^\n]{0,80}?)(?:mang\s+t\u00ean\s+)?(?P<product>[A-Z][\w]{2,})",
-        text, re.UNICODE,
-    ):
-        product_text = m.group("product").strip()
-        product_e = _best_entity_match(product_text, products, {"PRODUCT"})
-        if not product_e:
-            continue
-        pos = m.start()
-        recent: list[tuple[int, Entity]] = []
-        for org_e in orgs:
-            last_pos = -1
-            for n in [org_e.name] + getattr(org_e, "aliases", []):
-                for occ in re.finditer(re.escape(n), text[:pos], re.IGNORECASE):
-                    if occ.start() > last_pos:
-                        last_pos = occ.start()
-            if last_pos >= 0:
-                recent.append((last_pos, org_e))
-        recent.sort(key=lambda x: -x[0])
-        for _, org_e in recent[:2]:
-            pk = _pk(org_e.id, product_e.id)
-            if pk not in existing_pk:
-                existing_pk.add(pk)
-                rels.append(Relation(source=org_e.id, target=product_e.id, label="developed"))
 
     return rels
 
@@ -1197,12 +1770,34 @@ def _extract_multi_entity_relations(
 # §10 — build_graph (entry point)
 # ═══════════════════════════════════════════════════════════════════
 
+def _output_guard(
+    relations: list[Relation],
+    entity_map: dict[str, Entity],
+) -> list[Relation]:
+    """Final filter: only keep relations in ALLOWED_RELATIONS with valid domain/range."""
+    clean: list[Relation] = []
+    for r in relations:
+        if r.label not in ALLOWED_RELATIONS:
+            continue
+        src = entity_map.get(r.source)
+        tgt = entity_map.get(r.target)
+        if not src or not tgt:
+            continue
+        if _is_news_source(src.name) or _is_news_source(tgt.name):
+            continue
+        if not _validate_domain_range(r.label, src.type, tgt.type):
+            continue
+        clean.append(r)
+    return clean
+
+
 def build_graph(raw_entities: list[dict], text: str) -> GraphData:
     """
-    3-tầng relation extraction:
-      Tầng 1: Pattern regex (RELATION_PATTERNS) → chính xác nhất
-      Tầng 2: KB enrich                          → triples corpus
-      Tầng 3: Co-occurrence scored               → fallback
+    Strict relation extraction — whitelist only:
+      Tầng 1:   Pattern regex (RELATION_PATTERNS)
+      Tầng 1.5: Multi-entity patterns (bởi A và B, như A và B)
+      Tầng 2:   KB lookup (same-sentence evidence only)
+      Guard:    Drop anything outside ALLOWED_RELATIONS
     """
     raw_entities = merge_adjacent_entities(raw_entities)
     sentences    = split_sentences(text)
@@ -1236,42 +1831,51 @@ def build_graph(raw_entities: list[dict], text: str) -> GraphData:
     if not entities:
         return GraphData(entities=[], relations=[])
 
+    # ── Detect Product entities from text context ──────────────
+    new_products = _detect_products_from_context(text, entities, seen)
+    entities.extend(new_products)
+
     # ── Gộp Aliases Thực thể ───────────────────────────────────
     entities = _resolve_aliases(entities, text)
-    entities = _filter_entities(entities, text)
 
-    # ── Trích xuất Properties trực tiếp từ văn bản ────────────
-    _extract_entity_properties(entities, text)
-
-    # ── Tầng 1 ─────────────────────────────────────────────────
+    # ── Tầng 1 — Pattern-based ────────────────────────────────
     pat_rels, existing_pk = _extract_pattern_relations(entities, sentences)
     logger.debug("Tầng 1 (pattern): %d", len(pat_rels))
 
-    # ── Tầng 2 ─────────────────────────────────────────────────
-    kb_rels: list[Relation] = []
-    if kb.kb_ready and len(entities) > 1:
-        for rd in kb.enrich_relations(entities, existing_pk, max_per_entity=2):
-            kb_rels.append(Relation(source=rd["source"], target=rd["target"], label=rd["label"]))
-            existing_pk.add(_pk(rd["source"], rd["target"]))
-    logger.debug("Tầng 2 (KB): %d", len(kb_rels))
-
-    # ── Tầng 3 ─────────────────────────────────────────────────
-    cooc_rels = _extract_cooccurrence_relations(entities, sentences, existing_pk)
-    logger.debug("Tầng 3 (co-occ): %d", len(cooc_rels))
-
-    # ── Tầng 1.5 — Multi-entity patterns (bởi A và B, như A và B) ─────
+    # ── Tầng 1.5 — Multi-entity patterns ──────────────────────
     multi_rels = _extract_multi_entity_relations(entities, text, existing_pk)
     logger.debug("Tầng 1.5 (multi-entity): %d", len(multi_rels))
 
-    all_rels = pat_rels + multi_rels + kb_rels + cooc_rels
+    # ── Tầng 1.6 — Contextual relations (appositive, compound, research)
+    ctx_rels = _extract_contextual_relations(entities, sentences, text, existing_pk)
+    logger.debug("Tầng 1.6 (contextual): %d", len(ctx_rels))
 
-    
+    # ── Tầng 1.7 — Keyword-bridge (entity-aware, no _NAME capture) ─
+    kw_rels = _extract_keyword_bridge(entities, sentences, existing_pk)
+    logger.debug("Tầng 1.7 (keyword-bridge): %d", len(kw_rels))
+
+    # ── Tầng 2 — KB same-sentence enrichment ──────────────────
+    kb_rels = _extract_kb_relations(entities, sentences, existing_pk)
+    logger.debug("Tầng 2 (KB same-sentence): %d", len(kb_rels))
+
+    all_rels = pat_rels + multi_rels + ctx_rels + kw_rels + kb_rels
+
     # ── Fold thuộc tính vào Nodes ──────────────────────────────
-    final_entities, final_relations = _fold_properties(entities, all_rels)
-    
+    final_entities, final_relations = _fold_properties(entities, all_rels, [])
+
+    # ── Tầng ∞ — Kết nối mọi orphan còn lại ───────────────────
+    orphan_rels = _connect_all_orphans(final_entities, final_relations, sentences, existing_pk)
+    final_relations += orphan_rels
+
+    # ── Output guard ───────────────────────────────────────────
+    entity_map = {e.id: e for e in final_entities}
+    final_relations = _output_guard(final_relations, entity_map)
+
     logger.info(
-        "build_graph: %d entities, %d relations (P=%d KB=%d C=%d)",
-        len(final_entities), len(final_relations), len(pat_rels), len(kb_rels), len(cooc_rels),
+        "build_graph: %d entities, %d relations (P=%d M=%d C=%d KW=%d KB=%d OR=%d)",
+        len(final_entities), len(final_relations),
+        len(pat_rels), len(multi_rels), len(ctx_rels), len(kw_rels), len(kb_rels),
+        len(orphan_rels),
     )
     return GraphData(entities=final_entities, relations=final_relations)
 
@@ -1284,34 +1888,38 @@ def predict_new_links(
     entities: list[Entity],
     relations: list[Relation],
 ) -> list[Relation]:
-    existing  = {_pk(r.source, r.target) for r in relations}
+    """Predict new links using KB only — all results are marked isPredicted=True
+    and filtered through the whitelist."""
+    if not kb.kb_ready:
+        return []
+
+    existing = {_pk(r.source, r.target) for r in relations}
     predicted: list[Relation] = []
 
-    candidates = sorted(
-        [
-            (_TYPE_PAIR_PRIORITY.get(
-                (s.type, t.type),
-                _TYPE_PAIR_PRIORITY.get((t.type, s.type), 0),
-             ), s, t)
-            for i, s in enumerate(entities)
-            for j, t in enumerate(entities)
-            if i < j and _pk(s.id, t.id) not in existing
-        ],
-        key=lambda x: -x[0],
-    )
+    for i, src in enumerate(entities):
+        for tgt in entities[i + 1:]:
+            if _pk(src.id, tgt.id) in existing:
+                continue
+            if _is_news_source(src.name) or _is_news_source(tgt.name):
+                continue
 
-    for _, src, tgt in candidates:
-        lbl: Optional[str] = None
-        if kb.kb_ready:
-            lbl = kb.find_relation(src.name, tgt.name)
-        if not lbl:
-            lbl = _RELATION_LABELS_VI.get((src.type, tgt.type))
-        if lbl:
-            predicted.append(Relation(
-                source=src.id, target=tgt.id,
-                label=lbl, isPredicted=True,
-            ))
-        if len(predicted) >= 5:
-            break
+            raw_lbl = kb.find_relation(src.name, tgt.name)
+            if not raw_lbl:
+                continue
+            lbl = _normalize_label(raw_lbl)
+            if lbl is None:
+                continue
+
+            if _validate_domain_range(lbl, src.type, tgt.type):
+                predicted.append(Relation(
+                    source=src.id, target=tgt.id, label=lbl, isPredicted=True,
+                ))
+            elif _validate_domain_range(lbl, tgt.type, src.type):
+                predicted.append(Relation(
+                    source=tgt.id, target=src.id, label=lbl, isPredicted=True,
+                ))
+
+            if len(predicted) >= 5:
+                return predicted
 
     return predicted

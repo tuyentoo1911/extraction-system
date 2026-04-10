@@ -41,12 +41,23 @@ def split_sentences(text: str) -> list[str]:
     được đoạn PDF extract dài không dấu câu. Phiên bản mới thêm bước
     cắt theo ký tự để đảm bảo mỗi câu không vượt SENTENCE_CHAR_LIMIT.
     """
+    # Bước 0: bảo vệ abbreviations phổ biến khỏi bị split sai
+    _ABBR = {"TP.", "Tp.", "tp.", "Inc.", "Corp.", "Co.", "Ltd.", "Dr.", "Mr.", "Ms.", "vs."}
+    protected = text.strip()
+    abbr_map: dict[str, str] = {}
+    for abbr in _ABBR:
+        placeholder = abbr.replace(".", "\x00")
+        abbr_map[placeholder] = abbr
+        protected = protected.replace(abbr, placeholder)
+
     # Bước 1: split theo dấu câu và xuống dòng
-    raw = re.split(r'(?<=[.!?\n])\s+|\n{2,}', text.strip())
+    raw = re.split(r'(?<=[.!?\n])\s+|\n{2,}', protected)
     sentences: list[str] = []
 
     for seg in raw:
         seg = seg.strip()
+        for placeholder, original in abbr_map.items():
+            seg = seg.replace(placeholder, original)
         if not seg:
             continue
         # Bước 2: cắt tiếp nếu đoạn còn quá dài (không có dấu câu)

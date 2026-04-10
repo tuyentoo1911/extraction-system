@@ -51,6 +51,21 @@ _LOCATION_PREFIXES = {
     "huyện", "huyen", "tỉnh", "tinh",
     "phường", "phuong", "xã", "xa", "thị", "thi",
 }
+_GENERIC_NODE_TERMS = {
+    "chính",
+    "vụ này",
+    "thương vụ này",
+    "một cuộc phỏng vấn",
+    "cuộc phỏng vấn",
+    "phỏng vấn",
+    "sự kiện",
+    "sản phẩm này",
+    "doanh nghiệp này",
+    "công ty này",
+    "đối thủ",
+    "đối tác",
+}
+_WEAK_SINGLE_TOKEN_TYPES = {"Person", "Organization", "Event", "Product"}
 
 _RELATION_LABELS_VI: dict[tuple[str, str], str] = {
     ("Person", "Organization"):       "executive_of",
@@ -435,6 +450,70 @@ def _is_informative(name: str, gtype: str) -> bool:
 
 def _is_noisy_date(e: Entity) -> bool:
     return e.type == "Date" and not any(c.isdigit() for c in e.name)
+
+
+def _is_generic_node_name(name: str) -> bool:
+    low = _norm(name).lower()
+    if low in _GENERIC_NODE_TERMS:
+        return True
+    if low.startswith(("một ", "các ", "những ")) and len(low.split()) <= 4:
+        return True
+    return False
+
+
+def _is_weak_single_token(name: str, gtype: str) -> bool:
+    parts = [part for part in _norm(name).split() if part]
+    if len(parts) != 1 or gtype not in _WEAK_SINGLE_TOKEN_TYPES:
+        return False
+    token = parts[0]
+    if len(token) <= 3:
+        return True
+    if token.islower():
+        return True
+    return False
+
+
+def _looks_like_fragment(entity: Entity, all_entities: list[Entity], text: str) -> bool:
+    name = _norm(entity.name)
+    low_name = name.lower()
+    if len(name.split()) > 2:
+        return False
+
+    for other in all_entities:
+        if other.id == entity.id:
+            continue
+        other_name = _norm(other.name)
+        low_other = other_name.lower()
+        if low_name == low_other:
+            continue
+        if len(other_name) <= len(name):
+            continue
+        if low_name not in low_other:
+            continue
+        if entity.type != other.type and entity.type not in {"Person", "Organization", "Location"}:
+            continue
+        if not re.search(rf"(?<!\w){re.escape(name)}(?!\w)", text, re.IGNORECASE):
+            continue
+        if re.search(rf"(?<!\w){re.escape(other_name)}(?!\w)", text, re.IGNORECASE):
+            return True
+    return False
+
+
+def _filter_entities(entities: list[Entity], text: str) -> list[Entity]:
+    filtered: list[Entity] = []
+    for entity in entities:
+        if _is_generic_node_name(entity.name):
+            continue
+        if _is_weak_single_token(entity.name, entity.type):
+            continue
+        filtered.append(entity)
+
+    final_entities: list[Entity] = []
+    for entity in filtered:
+        if _looks_like_fragment(entity, filtered, text):
+            continue
+        final_entities.append(entity)
+    return final_entities
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -1159,6 +1238,7 @@ def build_graph(raw_entities: list[dict], text: str) -> GraphData:
 
     # ── Gộp Aliases Thực thể ───────────────────────────────────
     entities = _resolve_aliases(entities, text)
+    entities = _filter_entities(entities, text)
 
     # ── Trích xuất Properties trực tiếp từ văn bản ────────────
     _extract_entity_properties(entities, text)

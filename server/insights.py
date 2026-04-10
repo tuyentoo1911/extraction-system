@@ -4,6 +4,12 @@ from typing import Any
 
 from schemas import GraphData
 
+try:
+    from llm_client import generate, is_configured
+    LLM_AVAILABLE = True
+except ImportError:
+    LLM_AVAILABLE = False
+
 GENERIC_TERMS = {
     "công nghiệp",
     "công nghệ",
@@ -14,6 +20,8 @@ GENERIC_TERMS = {
     "ngân hàng",
     "kinh tế",
 }
+
+FOCUS_ENTITY_TYPES = ("Organization", "Product", "Person", "Location", "Event")
 
 
 def _build_graph(data: GraphData):
@@ -96,7 +104,229 @@ def _format_table(title: str, rows: list[dict[str, Any]], columns: list[str]) ->
     return lines
 
 
-def compute_insight_report(data: GraphData, input_text: str = "") -> dict[str, Any]:
+def _influence_band(score: float) -> str:
+    if score >= 0.75:
+        return "High Influence"
+    if score >= 0.45:
+        return "Medium Influence"
+    return "Emerging Influence"
+
+
+def _pick_focus_entity(rows: list[dict[str, Any]]) -> dict[str, Any] | None:
+    if not rows:
+        return None
+    for entity_type in FOCUS_ENTITY_TYPES:
+        for row in rows:
+            if row["entity_type"] == entity_type:
+                return row
+    return rows[0]
+
+
+def _focus_neighbors(graph, node_id: str, limit: int = 8) -> list[dict[str, str]]:
+    neighbors: list[dict[str, str]] = []
+    if not graph.has_node(node_id):
+        return neighbors
+
+    for source, target, edge in graph.edges(data=True):
+        if source == node_id:
+            attrs = graph.nodes[target]
+            neighbors.append(
+                {
+                    "direction": "out",
+                    "node": attrs.get("name", target),
+                    "entity_type": attrs.get("entity_type", "UNKNOWN"),
+                    "label": edge.get("label", ""),
+                }
+            )
+        elif target == node_id:
+            attrs = graph.nodes[source]
+            neighbors.append(
+                {
+                    "direction": "in",
+                    "node": attrs.get("name", source),
+                    "entity_type": attrs.get("entity_type", "UNKNOWN"),
+                    "label": edge.get("label", ""),
+                }
+            )
+    neighbors.sort(key=lambda item: (item["entity_type"], item["node"], item["label"]))
+    return neighbors[:limit]
+
+
+def _summarize_neighbor_types(neighbors: list[dict[str, str]]) -> str:
+    if not neighbors:
+        return "chưa có quan hệ trực tiếp đủ rõ để mô tả"
+    type_counts: dict[str, int] = {}
+    for item in neighbors:
+        key = item["entity_type"]
+        type_counts[key] = type_counts.get(key, 0) + 1
+    ranked = sorted(type_counts.items(), key=lambda pair: (-pair[1], pair[0]))
+    return ", ".join(f"{entity_type} ({count})" for entity_type, count in ranked[:4])
+
+
+def _render_focus_report(
+    overview: dict[str, Any],
+    focus_row: dict[str, Any] | None,
+    top_influence: list[dict[str, Any]],
+    top_brokers: list[dict[str, Any]],
+    top_broadcasters: list[dict[str, Any]],
+    top_collectors: list[dict[str, Any]],
+    entity_type_summary: list[dict[str, Any]],
+    graph,
+) -> list[str]:
+    if not focus_row:
+        return []
+
+    node_name = focus_row["node"]
+    node_type = focus_row["entity_type"]
+    node_id = next(
+        (node_id for node_id, attrs in graph.nodes(data=True) if attrs.get("name") == node_name),
+        None,
+    )
+    neighbors = _focus_neighbors(graph, node_id) if node_id else []
+    band = _influence_band(float(focus_row["influence_score"]))
+    broker_rank = next(
+        (index for index, row in enumerate(top_brokers, start=1) if row["node"] == node_name),
+        None,
+    )
+    focus_degree = int(focus_row["total_degree"])
+    top_peer_names = ", ".join(row["node"] for row in top_influence[1:4]) if len(top_influence) > 1 else ""
+    strongest_neighbor_text = ", ".join(item["node"] for item in neighbors[:4]) if neighbors else "chưa có đối tác nổi bật"
+    type_mix = _summarize_neighbor_types(neighbors)
+
+    lines = [
+        f"# Báo cáo Phân tích Mạng lưới Thực thể: {node_name}",
+        "",
+        (
+            f"**{node_name}** được xếp loại **{band}** trong đồ thị hiện tại "
+            f"với `influence_score = {focus_row['influence_score']:.6f}`. "
+            f"Thực thể này thuộc nhóm **{node_type}** và đang nằm trong mạng có "
+            f"`{overview['nodes']}` node, `{overview['edges']}` cạnh."
+        ),
+        "",
+        "## 1. Chỉ số Mức độ trung tâm",
+        (
+            f"- **Total degree:** `{focus_degree}`. Đây là số kết nối trực tiếp của node với các thực thể khác trong mạng."
+        ),
+        (
+            f"- **Pagerank:** `{focus_row['pagerank']:.6f}`; **Betweenness:** `{focus_row['betweenness']:.6f}`."
+        ),
+    ]
+
+    if top_influence and top_influence[0]["node"] == node_name:
+        lines.append(
+            f"- **Vị thế:** {node_name} hiện là node ảnh hưởng cao nhất trong đồ thị. "
+            f"Các node đứng sau là {top_peer_names or 'chưa có đối trọng rõ rệt'}."
+        )
+    else:
+        rank = next((index for index, row in enumerate(top_influence, start=1) if row["node"] == node_name), None)
+        if rank is not None:
+            lines.append(
+                f"- **Vị thế:** {node_name} đang nằm trong top `{rank}` node có influence cao nhất của đồ thị."
+            )
+
+    lines.extend(
+        [
+            "",
+            "## 2. Vị thế lan truyền và vai trò chiến lược",
+            (
+                f"- **Cấu trúc kết nối:** node này đang gắn trực tiếp với {type_mix}."
+            ),
+            (
+                f"- **Các thực thể liên quan nổi bật:** {strongest_neighbor_text}."
+            ),
+        ]
+    )
+
+    if broker_rank is not None:
+        lines.append(
+            f"- **Vai trò cầu nối:** {node_name} đang đứng top `{broker_rank}` theo betweenness, "
+            "cho thấy node này có vai trò nối các cụm quan hệ khác nhau."
+        )
+    else:
+        lines.append(
+            f"- **Vai trò cầu nối:** {node_name} không nằm trong nhóm broker mạnh nhất, nên ảnh hưởng hiện nghiêng về kết nối trực tiếp hơn là trung gian mạng."
+        )
+
+    lines.extend(
+        [
+            "",
+            "## 3. Đánh giá quan hệ nổi bật",
+        ]
+    )
+
+    if neighbors:
+        for item in neighbors[:6]:
+            arrow = "→" if item["direction"] == "out" else "←"
+            lines.append(
+                f"- `{node_name}` {arrow} **{item['label']}** {arrow} `{item['node']}` ({item['entity_type']})"
+            )
+    else:
+        lines.append("- Chưa có đủ quan hệ trực tiếp để trích ra các cặp nổi bật.")
+
+    lines.extend(
+        [
+            "",
+            "## 4. Tổng kết",
+            (
+                f"- Mạng hiện có mật độ `{overview['density']:.6f}` với `{overview['weakly_connected_components']}` thành phần liên thông yếu, "
+                f"nên các kết luận nên ưu tiên đọc theo node trung tâm và các cụm lân cận của **{node_name}**."
+            ),
+        ]
+    )
+    if entity_type_summary:
+        lines.append(
+            f"- Nhóm thực thể có influence trung bình cao nhất hiện tại là **{entity_type_summary[0]['entity_type']}**."
+        )
+    if top_broadcasters:
+        lines.append(
+            f"- Các broadcaster đáng chú ý: {', '.join(row['node'] for row in top_broadcasters[:3])}."
+        )
+    if top_collectors:
+        lines.append(
+            f"- Các collector đáng chú ý: {', '.join(row['node'] for row in top_collectors[:3])}."
+        )
+    return lines
+
+
+async def _generate_llm_narrative(data: GraphData, input_text: str, overview: dict, top_influence: list, top_brokers: list, entity_type_summary: list) -> list[str]:
+    if not LLM_AVAILABLE or not is_configured():
+        return []
+
+    try:
+        system_prompt = "You are an expert data analyst. Generate a concise executive summary in Vietnamese for a knowledge graph analysis. Focus on key insights, patterns, and recommendations."
+
+        entities_text = "\n".join([f"- {e.name} ({e.type})" for e in data.entities[:20]])  # limit to 20
+        relations_text = "\n".join([f"- {r.source} -> {r.label} -> {r.target}" for r in data.relations[:20]])
+
+        user_message = f"""
+Analyze this knowledge graph:
+
+Overview:
+- Nodes: {overview['nodes']}
+- Edges: {overview['edges']}
+- Density: {overview['density']:.4f}
+- Components: {overview['weakly_connected_components']}
+
+Top influential entities: {', '.join([item['node'] for item in top_influence[:5]])}
+
+Top brokers: {', '.join([item['node'] for item in top_brokers[:5]])}
+
+Entity types: {', '.join([f"{et['entity_type']}: {et['node_count']} nodes" for et in entity_type_summary[:5]])}
+
+Input text: {input_text[:500]}...
+
+Provide 3-5 key insights in Vietnamese.
+"""
+
+        messages = [{"role": "user", "content": user_message}]
+        response = await generate(system_prompt, messages)
+        return [response]
+    except Exception as e:
+        print(f"LLM narrative failed: {e}")
+        return []
+
+
+async def compute_insight_report(data: GraphData, input_text: str = "") -> dict[str, Any]:
     nx, graph = _build_graph(data)
     node_count = graph.number_of_nodes()
     edge_count = graph.number_of_edges()
@@ -123,14 +353,27 @@ def compute_insight_report(data: GraphData, input_text: str = "") -> dict[str, A
         }
         return {"insight_markdown": "# Automatic Insights Report\n\nĐồ thị chưa có dữ liệu để phân tích insight.\n", "report": report}
 
+    # Use undirected graph for centrality calculations to match metrics.py
+    ug = graph.to_undirected()
+
+    # Determine k for betweenness sampling (same as metrics.py)
+    BETWEENNESS_K_SAMPLES = 100
+    LARGE_GRAPH_NODE_WARN = 500
+    if node_count <= BETWEENNESS_K_SAMPLES:
+        betweenness_k = None
+    else:
+        betweenness_k = min(node_count, BETWEENNESS_K_SAMPLES)
+        if node_count >= LARGE_GRAPH_NODE_WARN:
+            print(f"Warning: Large graph ({node_count} nodes). Using betweenness k-sampling.")
+
     in_degree = dict(graph.in_degree())
     out_degree = dict(graph.out_degree())
     total_degree = dict(graph.degree())
     pagerank = nx.pagerank(graph, weight="weight") if edge_count > 0 else {n: 1.0 / node_count for n in graph.nodes()}
-    betweenness = nx.betweenness_centrality(graph, normalized=True, weight=None)
+    betweenness = nx.betweenness_centrality(ug, normalized=True, k=betweenness_k)
     try:
         _, authority_score = nx.hits(graph, max_iter=500, normalized=True)
-    except Exception:
+    except (nx.PowerIterationFailedConvergence, ValueError):
         authority_score = {node: 0.0 for node in graph.nodes()}
 
     normalized = {
@@ -204,7 +447,7 @@ def compute_insight_report(data: GraphData, input_text: str = "") -> dict[str, A
         "nodes": node_count,
         "edges": edge_count,
         "predicted_relations": predicted_relations,
-        "density": round(float(nx.density(graph)) if node_count > 1 else 0.0, 6),
+        "density": round(float(nx.density(ug)) if node_count > 1 else 0.0, 6),
         "weakly_connected_components": int(nx.number_weakly_connected_components(graph)),
         "avg_degree": round((2 * edge_count / node_count), 6),
         "source_text_length": len(input_text or ""),
@@ -224,6 +467,11 @@ def compute_insight_report(data: GraphData, input_text: str = "") -> dict[str, A
     if entity_type_summary:
         narrative.append(f"Nhóm loại thực thể nổi bật nhất theo influence trung bình hiện là {entity_type_summary[0]['entity_type']}.")
 
+    # Try LLM narrative if available
+    llm_narrative = await _generate_llm_narrative(data, input_text, overview, top_influence, top_brokers, entity_type_summary)
+    if llm_narrative:
+        narrative = llm_narrative
+
     report = {
         "overview": overview,
         "top_influence": top_influence,
@@ -237,18 +485,46 @@ def compute_insight_report(data: GraphData, input_text: str = "") -> dict[str, A
         },
         "narrative": narrative,
     }
+    focus_row = _pick_focus_entity(top_influence)
+    report["focus_entity"] = focus_row
 
-    lines = ["# Automatic Insights Report", "", "## Executive Summary"]
-    for item in narrative:
-        lines.append(f"- {item}")
-    lines.extend([
-        "",
-        "## Graph Overview",
-        f"- Graph has {overview['nodes']:,} nodes, {overview['edges']:,} edges, density {overview['density']:.6f}.",
-        f"- Weakly connected components: {overview['weakly_connected_components']:,}; average degree {overview['avg_degree']:.2f}.",
-        f"- Predicted relations currently shown in graph: {overview['predicted_relations']:,}.",
-        "",
-    ])
+    lines = _render_focus_report(
+        overview,
+        focus_row,
+        top_influence,
+        top_brokers,
+        top_broadcasters,
+        top_collectors,
+        entity_type_summary,
+        graph,
+    )
+    if not lines:
+        lines = ["# Automatic Insights Report", "", "## Executive Summary"]
+        for item in narrative:
+            lines.append(f"- {item}")
+        lines.extend([
+            "",
+            "## Graph Overview",
+            f"- Graph has {overview['nodes']:,} nodes, {overview['edges']:,} edges, density {overview['density']:.6f}.",
+            f"- Weakly connected components: {overview['weakly_connected_components']:,}; average degree {overview['avg_degree']:.2f}.",
+            f"- Predicted relations currently shown in graph: {overview['predicted_relations']:,}.",
+            "",
+        ])
+    else:
+        lines.extend([
+            "",
+            "## Executive Summary",
+        ])
+        for item in narrative:
+            lines.append(f"- {item}")
+        lines.extend([
+            "",
+            "## Graph Overview",
+            f"- Graph has {overview['nodes']:,} nodes, {overview['edges']:,} edges, density {overview['density']:.6f}.",
+            f"- Weakly connected components: {overview['weakly_connected_components']:,}; average degree {overview['avg_degree']:.2f}.",
+            f"- Predicted relations currently shown in graph: {overview['predicted_relations']:,}.",
+            "",
+        ])
     lines.extend(_format_table("Top Influence Nodes", top_influence, ["node", "entity_type", "total_degree", "influence_score", "pagerank", "betweenness"]))
     lines.extend(_format_table("Top Broker Nodes", top_brokers, ["node", "entity_type", "total_degree", "betweenness", "influence_score"]))
     lines.extend(_format_table("Top Broadcasters", top_broadcasters, ["node", "entity_type", "out_degree", "in_degree", "degree_gap", "influence_score"]))

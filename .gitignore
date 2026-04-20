@@ -34,3 +34,4 @@ server/chat_memory.py
 notebooks
 *.db-shm
 *db-wal
+docs/chatbot.md

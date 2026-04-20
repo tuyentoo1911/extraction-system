@@ -39,20 +39,110 @@ _MAX_CONTEXT_RELATIONS = 60
 _MAX_HISTORY_FOR_LLM = 20
 
 _SYSTEM_PROMPT = """\
-You are a knowledge-graph assistant for a Vietnamese NER application.
-Answer in the same language the user uses (Vietnamese or English).
+Bạn là AI Chatbot của hệ thống Knowledge Graph Extractor.
 
-You have access to RETRIEVED CONTEXT from a RAG pipeline that includes:
-- Relevant passages from the source document
-- Entity information from the extracted knowledge graph
-- Relations between entities
-- Facts from the Knowledge Base corpus (6000+ triples)
+Bạn có quyền truy cập vào:
+- Knowledge Graph (entities, relations) — nguồn ưu tiên cao nhất
+- Knowledge Base (triple)
+- Văn bản gốc (input text)
+- Ngữ cảnh được truy xuất từ RAG pipeline
 
-RULES:
-- Ground your answers ONLY in the retrieved context — do not fabricate information.
-- Cite specific entities, relations, or source excerpts when answering.
-- If the context is insufficient, say so honestly and suggest what the user could ask instead.
-- Keep answers concise and use Markdown formatting.
+MỤC TIÊU:
+Trả lời chính xác câu hỏi người dùng bằng cách phân tích dữ liệu từ Knowledge Graph.
+
+=====================
+NGUYÊN TẮC QUAN TRỌNG
+=====================
+
+1. CHỈ dùng dữ liệu trong context
+- Không suy đoán
+- Không bịa thêm
+- Nếu thiếu dữ liệu → nói rõ: "Không tìm thấy dữ liệu phù hợp trong hệ thống"
+
+2. Ưu tiên thông tin theo thứ tự:
+(1) Quan hệ trực tiếp trong Knowledge Graph
+(2) Quan hệ gián tiếp (2-hop qua node trung gian)
+(3) Knowledge Base triple (triple)
+(4) Văn bản gốc (RAG excerpt)
+
+3. Khi phân tích graph:
+- Xác định thực thể chính (được đánh dấu ← [MENTIONED IN QUERY])
+- Ưu tiên hub nodes (node có degree cao, nhiều kết nối)
+- Nếu có nhiều quan hệ → chọn quan hệ trực tiếp liên quan nhất
+- Xem phần "Graph Insights" trong context để hiểu cấu trúc đồ thị
+
+4. Khi không có dữ liệu:
+- Nói rõ: "Không tìm thấy dữ liệu phù hợp trong hệ thống"
+- Gợi ý 1-2 câu hỏi khác có thể trả lời được
+
+=====================
+CHỐNG HALLUCINATION (BẮT BUỘC)
+=====================
+
+TUYỆT ĐỐI KHÔNG:
+- Tạo ra quan hệ không có trong Knowledge Graph context
+- Đặt tên thực thể không xuất hiện trong danh sách entities
+- Suy diễn từ kiến thức chung (world knowledge) khi context không hỗ trợ
+- Khẳng định chắc chắn điều gì đó nếu chỉ đến từ quan hệ [PREDICTED]
+
+Khi dùng quan hệ [PREDICTED — lower confidence]:
+→ PHẢI ghi rõ: "đây là dự đoán, chưa được xác nhận từ văn bản gốc"
+
+Khi dùng triple từ Knowledge Base (KB):
+→ Nên ghi rõ: "theo Knowledge Base"
+
+=====================
+CÁCH TRẢ LỜI
+=====================
+
+- Ngắn gọn, rõ ràng, có cấu trúc
+- Ưu tiên insight, không chỉ liệt kê
+- KHÔNG viết mở đầu thừa như "Dựa trên context được cung cấp..." hay "Theo thông tin tôi có..."
+
+Nếu là phân tích:
+→ Giải thích + ý nghĩa + kết luận (tối đa 200 từ)
+
+Nếu là liệt kê:
+→ Bullet points ngắn gọn
+
+Nếu là quan hệ:
+→ Dùng format: [Thực thể A] --(quan hệ)--> [Thực thể B]
+
+Nếu là so sánh:
+→ Bảng hoặc đối chiếu rõ ràng
+
+=====================
+KIỂM SOÁT ĐỘ DÀI
+=====================
+
+- Câu hỏi đơn giản (lookup, count, tìm tên): 1-3 câu
+- Câu hỏi vừa (quan hệ, neighbors): 3-8 dòng
+- Câu hỏi phức tạp (summary, compare, phân tích): tối đa 200 từ
+- KHÔNG lặp lại thông tin đã nêu
+- KHÔNG thêm phần kết luận thừa nếu đã rõ ràng
+
+=====================
+XỬ LÝ CÂU HỎI
+=====================
+
+Bước 1: Xác định intent
+  summary / relationship / compare / ranking / count / lookup / kb-search
+
+Bước 2: Xác định entity (dùng danh sách entities trong context)
+
+Bước 3: Tìm dữ liệu trong Knowledge Graph context
+
+Bước 4: Suy luận từ graph nếu cần (2-hop, hub node)
+
+Bước 5: Trả lời theo format phù hợp với intent
+
+=====================
+NGÔN NGỮ
+=====================
+
+- Trả lời theo ngôn ngữ của người dùng
+- Nếu user dùng tiếng Việt → trả lời tiếng Việt
+- Viết tự nhiên, dễ hiểu, không dịch thuật cứng nhắc
 """
 
 
@@ -73,6 +163,10 @@ async def handle_chat(req: ChatRequest) -> ChatResponse:
 
     history_rows = _safe_get_history(session_id)
 
+    # FIX 2: Build both context sources and combine them for the LLM.
+    # _build_graph_context provides structured graph data with hub/degree/hints.
+    # rag_mod.retrieve_context provides BM25-retrieved text/entity/KB chunks.
+    graph_context = _build_graph_context(req.message, req.entities, req.relations)
     rag_context = rag_mod.retrieve_context(
         req.message, req.input_text, req.entities, req.relations,
     )
@@ -82,7 +176,7 @@ async def handle_chat(req: ChatRequest) -> ChatResponse:
 
     if llm_client.is_configured():
         try:
-            reply = await _call_llm(history_rows, rag_context)
+            reply = await _call_llm(history_rows, graph_context, rag_context)
             engine = "llm"
         except Exception:
             logger.warning("LLM call failed, falling back to rule-based.", exc_info=True)
@@ -148,12 +242,28 @@ def _build_graph_context(
     entities: list[Entity],
     relations: list[Relation],
 ) -> str:
+    """Build a richly-formatted graph context block for the LLM.
+
+    Implements:
+      FIX 1 — structured section headers
+      FIX 4 — degree-aware entity scoring (hub boost)
+      FIX 6 — reasoning hints, confidence tags, top-node awareness
+    """
     if not entities:
         return "(No graph data provided.)"
 
     q_lower = question.lower()
     entity_map = {e.id: e for e in entities}
 
+    # ── Degree map (FIX 4 — ENTITY BOOST) ───────────────────────
+    deg: dict[str, int] = defaultdict(int)
+    for e in entities:
+        deg[e.id] = 0
+    for r in relations:
+        deg[r.source] += 1
+        deg[r.target] += 1
+
+    # Score = question relevance + alias bonus + hub boost (capped at +3)
     scored: list[tuple[Entity, float]] = []
     for e in entities:
         score = 0.0
@@ -162,6 +272,7 @@ def _build_graph_context(
         for alias in getattr(e, "aliases", []):
             if alias.lower() in q_lower:
                 score += 5.0
+        score += min(deg.get(e.id, 0) * 0.3, 3.0)
         scored.append((e, score))
 
     scored.sort(key=lambda x: x[1], reverse=True)
@@ -173,31 +284,127 @@ def _build_graph_context(
         if r.source in top_ids or r.target in top_ids
     ][:_MAX_CONTEXT_RELATIONS]
 
-    lines = ["### Graph Context", ""]
-    lines.append(f"**Entities ({len(top_entities)}/{len(entities)}):**")
-    for e, _ in top_entities:
-        props = ""
-        if e.properties:
-            props = " | " + ", ".join(f"{p.key}={p.value}" for p in e.properties[:5])
-        lines.append(f"- {e.name} [{e.type}]{props}")
-
-    lines.append("")
-    lines.append(f"**Relations ({len(relevant_rels)}/{len(relations)}):**")
-
-    def _name(eid: str) -> str:
+    def _ename(eid: str) -> str:
         ent = entity_map.get(eid)
         return ent.name if ent else eid
 
-    for r in relevant_rels:
-        lines.append(f"- {_name(r.source)} --[{r.label}]--> {_name(r.target)}")
+    lines: list[str] = [
+        "═══════════════════════════════════════",
+        "  KNOWLEDGE GRAPH CONTEXT",
+        "═══════════════════════════════════════",
+        "",
+    ]
 
+    # ── FIX 6: Top Hub Nodes ─────────────────────────────────────
+    top_hubs = sorted(deg.items(), key=lambda x: x[1], reverse=True)[:5]
+    if top_hubs:
+        lines.append("### Top Hub Nodes (most connected):")
+        for eid, d in top_hubs:
+            if eid in entity_map:
+                e = entity_map[eid]
+                lines.append(f"  • {e.name} [{e.type}] — {d} connections")
+        lines.append("")
+
+    # ── FIX 1 + FIX 4: Entities with degree & query mention tag ─
+    predicted_rel_count = sum(1 for r in relevant_rels if r.isPredicted)
+    lines.append(f"### Entities ({len(top_entities)}/{len(entities)}):")
+    for e, _ in top_entities:
+        d = deg.get(e.id, 0)
+        props_str = ""
+        if e.properties:
+            props_str = "  |  " + ", ".join(
+                f"{p.key}={p.value}" for p in e.properties[:3]
+            )
+        mention_tag = "  ← [MENTIONED IN QUERY]" if e.name.lower() in q_lower else ""
+        lines.append(f"  • {e.name} [{e.type}] (degree={d}){props_str}{mention_tag}")
+
+    lines.append("")
+
+    # ── FIX 1 + FIX 6: Relations with confidence tags ────────────
+    lines.append(
+        f"### Relations ({len(relevant_rels)}/{len(relations)}"
+        f"{f', predicted={predicted_rel_count}' if predicted_rel_count else ''}):"
+    )
+    for r in relevant_rels:
+        conf_tag = "  [PREDICTED — lower confidence]" if r.isPredicted else ""
+        lines.append(
+            f"  [{_ename(r.source)}] --({r.label})--> [{_ename(r.target)}]{conf_tag}"
+        )
+
+    # ── FIX 6: Reasoning Hints ───────────────────────────────────
+    lines.append("")
+    lines.append("### Graph Insights (reasoning hints):")
+
+    # Hub node insight
+    if top_hubs and top_hubs[0][0] in entity_map:
+        hub_e = entity_map[top_hubs[0][0]]
+        hub_d = top_hubs[0][1]
+        lines.append(
+            f"  • Hub: '{hub_e.name}' is the most central node ({hub_d} connections) "
+            f"— likely the most important entity in this graph."
+        )
+
+    # Query-mentioned entity connectivity insight
+    query_entities = [e for e in entities if e.name.lower() in q_lower]
+    for qe in query_entities[:2]:
+        qe_deg = deg.get(qe.id, 0)
+        if qe_deg == 0:
+            lines.append(f"  • '{qe.name}' has no relations yet — limited information available.")
+        else:
+            lines.append(f"  • '{qe.name}' has {qe_deg} connection(s) in this graph.")
+
+    # 2-hop common neighbor hint
+    if len(query_entities) >= 2:
+        ea_neighbors = {
+            r.target if r.source == query_entities[0].id else r.source
+            for r in relations
+            if r.source == query_entities[0].id or r.target == query_entities[0].id
+        }
+        eb_neighbors = {
+            r.target if r.source == query_entities[1].id else r.source
+            for r in relations
+            if r.source == query_entities[1].id or r.target == query_entities[1].id
+        }
+        common = ea_neighbors & eb_neighbors - {query_entities[0].id, query_entities[1].id}
+        if common:
+            common_names = ", ".join(
+                f"'{_ename(cid)}'" for cid in list(common)[:3]
+            )
+            lines.append(
+                f"  • '{query_entities[0].name}' and '{query_entities[1].name}' "
+                f"share common neighbor(s): {common_names} — useful for 2-hop reasoning."
+            )
+
+    # Dominant entity type
+    type_counts = Counter(e.type for e in entities)
+    if type_counts:
+        dom_type, dom_cnt = type_counts.most_common(1)[0]
+        lines.append(f"  • Dominant entity type: {dom_type} ({dom_cnt}/{len(entities)} nodes).")
+
+    # Predicted relations warning
+    if predicted_rel_count:
+        lines.append(
+            f"  • {predicted_rel_count} relation(s) are PREDICTED (not extracted from source text) "
+            f"— treat with lower confidence."
+        )
+
+    lines.append("═══════════════════════════════════════")
     return "\n".join(lines)
 
 
 # ── LLM call ─────────────────────────────────────────────────────
 
-async def _call_llm(history: list[dict], graph_context: str) -> str:
+async def _call_llm(
+    history: list[dict],
+    graph_context: str,
+    rag_context: str = "",
+) -> str:
+    # FIX 2: Combine system prompt + structured graph context + RAG-retrieved chunks.
+    # Graph context (structured, degree-aware) comes first as it is the primary source.
+    # RAG context (BM25 text/entity/KB chunks) follows as supplementary evidence.
     system = _SYSTEM_PROMPT + "\n\n" + graph_context
+    if rag_context and rag_context.strip() not in {"(No relevant context found.)", ""}:
+        system += "\n\n" + rag_context
 
     msgs: list[dict[str, str]] = []
     for row in history[-_MAX_HISTORY_FOR_LLM:]:

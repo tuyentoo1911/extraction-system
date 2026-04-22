@@ -1,7 +1,4 @@
 ﻿// ============================================================
-// AI integration - calls the Python backend server
-// Backend: server/main.py (FastAPI on port 8000)
-// ============================================================
 
 import type { ChatApiResponse, ChatMessage, Entity, GraphData, MetricsData, Relation } from '../types';
 
@@ -19,7 +16,6 @@ async function resolveApiBase(): Promise<string> {
         return base;
       }
     } catch {
-      // try next candidate
     }
   }
   throw new Error('Cannot connect to the server. Run: npm run server');

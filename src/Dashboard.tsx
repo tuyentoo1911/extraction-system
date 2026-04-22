@@ -12,7 +12,7 @@ import InsightView from './components/views/InsightView';
 import ChatbotView from './components/views/ChatbotView';
 import type { GraphData, MetricsData, Relation, TabId } from './types';
 
-const SAMPLE_TEXT = "Năm 2015, Công ty Cổ phần Công nghệ Sao Việt (SaoVietTech) được thành lập tại Hà Nội bởi Nguyễn Minh Anh và Trần Hoàng Long. Trụ sở chính của công ty đặt tại quận Cầu Giấy, Hà Nội, nhưng đến năm 2019 họ mở thêm văn phòng đại diện tại Singapore.\n\nTháng 3 năm 2020, SaoVietTech ký thỏa thuận hợp tác chiến lược với Global AI Solutions Inc., một doanh nghiệp có trụ sở tại San Francisco, California. Theo thỏa thuận này, hai bên cùng phát triển sản phẩm trí tuệ nhân tạo mang tên VisionX.\n\nVisionX chính thức ra mắt vào ngày 12/10/2021 tại sự kiện TechFuture Expo 2021 tổ chức ở TP. Hồ Chí Minh. Sản phẩm này sử dụng nền tảng DeepVision Engine do nhóm nghiên cứu của Global AI Solutions phát triển trước đó.\n\nTrong năm tài chính 2022, SaoVietTech báo cáo doanh thu đạt 5 triệu USD và ký hợp đồng cung cấp VisionX cho Tập đoàn Hikari Nhật Bản (Hikari Group) với giá trị 2,3 triệu USD. Hikari Group có trụ sở tại Tokyo và là đối tác lâu năm của Tập đoàn Sumida Holdings.\n\nTheo Bloomberg, thương vụ này giúp SaoVietTech mở rộng thị trường sang Đông Nam Á và củng cố vị thế cạnh tranh với các đối thủ như NextGen Robotics và Alpha Dynamics.\n\nNgoài ra, Nguyễn Minh Anh từng làm việc tại FPT Software từ năm 2010 đến 2014 trước khi sáng lập SaoVietTech. Trong một cuộc phỏng vấn với Vietnam Business Review, anh cho biết VisionX được xây dựng dựa trên các nghiên cứu hợp tác với Đại học Bách Khoa Hà Nội.";
+const SAMPLE_TEXT = "";
 
 export default function Dashboard({ onBack }: { onBack: () => void }) {
   const [inputText, setInputText] = useState(SAMPLE_TEXT);

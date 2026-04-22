@@ -32,17 +32,10 @@ import knowledge_base as kb
 
 logger = logging.getLogger(__name__)
 
-
-# ═══════════════════════════════════════════════════════════════════
-# §1 — Constants & Whitelist
-# ═══════════════════════════════════════════════════════════════════
-
 ALLOWED_RELATIONS: frozenset[str] = frozenset({
-    # Core 9 relations (original whitelist)
     "founded", "headquartered_in", "has_office", "partnered_with",
     "competitor_of", "former_employee", "launched_at", "developed_by",
     "operates_in",
-    # Extended: connect Date / Money / Location / Percent nodes
     "established_in",   # Organization/Product → Date  (thành lập năm X, ra mắt ngày X)
     "occurred_in",      # Event/Organization  → Date  (xảy ra vào / trong năm X)
     "has_revenue",      # Organization        → Money (báo cáo doanh thu X)
@@ -51,7 +44,6 @@ ALLOWED_RELATIONS: frozenset[str] = frozenset({
 })
 
 _RELATION_NORM_MAP: dict[str, str | None] = {
-    # Pattern names
     "founded_by":                  "founded",
     "founded_by_passive":          "founded",
     "founded":                     "founded",
@@ -72,13 +64,11 @@ _RELATION_NORM_MAP: dict[str, str | None] = {
     "developed_by_passive":        "developed_by",
     "developed_by":                "developed_by",
     "operates_in":                 "operates_in",
-    # Extended relations
     "established_in":              "established_in",
     "occurred_in":                 "occurred_in",
     "has_revenue":                 "has_revenue",
     "has_value":                   "has_value",
     "held_in":                     "held_in",
-    # KB Vietnamese labels (triples.json relation field, after "_" → " ")
     "HỢP TÁC":                    "partnered_with",
     "ĐẶT TẠI":                    "headquartered_in",
     "SẢN XUẤT":                    "developed_by",
@@ -103,7 +93,6 @@ _RELATION_DOMAIN_RANGE: dict[str, list[tuple[set[str], set[str]]]] = {
     "launched_at":      [({"Product"},                {"Event"})],
     "developed_by":     [({"Product"},                {"Organization", "Person"})],
     "operates_in":      [({"Organization"},           {"Industry"})],
-    # Extended
     "established_in":   [({"Organization", "Product"}, {"Date"})],
     "occurred_in":      [({"Organization", "Event", "Product"}, {"Date"})],
     "has_revenue":      [({"Organization"},           {"Money"})],
@@ -143,14 +132,12 @@ _NER_TO_GRAPH: dict[str, str] = {
     "PERCENT": "Percent", "INDUSTRY": "Industry",
 }
 
-
 def _normalize_label(raw_label: str) -> str | None:
     """Map internal/KB label to whitelist. Returns None if not in whitelist."""
     norm = _RELATION_NORM_MAP.get(raw_label)
     if norm is not None:
         return norm
     return raw_label if raw_label in ALLOWED_RELATIONS else None
-
 
 def _validate_domain_range(label: str, src_type: str, tgt_type: str) -> bool:
     """Check entity types match the relation's domain/range constraint."""
@@ -159,14 +146,8 @@ def _validate_domain_range(label: str, src_type: str, tgt_type: str) -> bool:
         return False
     return any(src_type in dom and tgt_type in rng for dom, rng in constraints)
 
-
 def _is_news_source(name: str) -> bool:
     return name.lower().strip() in _NEWS_SOURCES
-
-
-# ═══════════════════════════════════════════════════════════════════
-# §2 — Relation Patterns (port từ knowledge_graph.ipynb, đã test)
-# ═══════════════════════════════════════════════════════════════════
 
 @dataclass
 class RelationPattern:
@@ -178,33 +159,24 @@ class RelationPattern:
     bidirectional: bool = False
     reverse_edge : bool = False
 
-
-# Shared building blocks
 _VI_CAP = r"[A-Z\u00C0-\u024F\u1EA0-\u1EF9\u0110\u0111]"
 
-# Lowercase connectors that appear inside Vietnamese org/person names
-# e.g. "Công ty", "Tập đoàn", "Nhật Bản", "Hàn Quốc", "Việt Nam"
 _VI_LOWER_CONT = (
     r"(?:ty|cổ|ph\u1ea7n|h\u1eefu|tr\u00e1ch|nhi\u1ec7m|tnhh|jsc|ltd|corp|co"
     r"|vi\u1ec7t|nam|nh\u1eadt|h\u00e0n|anh|ph\u00e1p|\u0111\u1ee9c|m\u1ef9"
     r"|qu\u1ed1c|t\u1ebf|b\u1eafc|trung|\u0111\u00f4ng|t\u00e2y|b\u1ea3n|m\u1edbi)"
 )
 
-# ORG/PERSON name: bắt đầu uppercase, tiếp theo là chữ cái, số,
-# hoặc một số lowercase connector thông dụng trong tên tiếng Việt
 _NAME = (
     _VI_CAP
     + r"(?:[\w&,\./]+"
     + r"(?:\s+(?:" + _VI_CAP + r"|\d|" + _VI_LOWER_CONT + r")[\w&,\./]+)*)"
 )
 
-# Stop-word lookahead: dừng khi gặp dấu câu hoặc từ viết thường không phải connector
 _STOP = r"(?=\s*(?:[,\.\(\);:\-]|\s+[a-z\u00e0-\u01b0\u1ea1-\u1ef9])|$)"
-
 
 RELATION_PATTERNS: list[RelationPattern] = [
 
-    # ── founded: Person/Org → Organization ────────────────────────
     RelationPattern("founded_by",
         re.compile(
             r"(?P<person>" + _NAME + r")\s+"
@@ -213,7 +185,6 @@ RELATION_PATTERNS: list[RelationPattern] = [
             r"(?P<org>" + _NAME + r")" + _STOP, re.UNICODE),
         subj_types={"PERSON"}, obj_types={"ORGANIZATION"}, confidence=0.85),
 
-    # Passive: "ORG được thành lập ... bởi PERSON"
     RelationPattern("founded_by_passive",
         re.compile(
             r"(?P<org>" + _NAME + r")\s*(?:\([^)]+\))?\s*"
@@ -223,8 +194,6 @@ RELATION_PATTERNS: list[RelationPattern] = [
         ),
         subj_types={"ORGANIZATION"}, obj_types={"PERSON"}, confidence=0.88, reverse_edge=True),
 
-    # ── former_employee: Person → Organization ────────────────────
-    # "từng làm việc tại", "từng công tác tại", "cựu X của", "từng là X của"
     RelationPattern("former_employee",
         re.compile(
             r"(?P<person>" + _NAME + r")\s+"
@@ -234,7 +203,6 @@ RELATION_PATTERNS: list[RelationPattern] = [
             re.UNICODE),
         subj_types={"PERSON"}, obj_types={"ORGANIZATION"}, confidence=0.80),
 
-    # "cựu [chức vụ] của ORG"
     RelationPattern("former_employee",
         re.compile(
             r"(?P<person>" + _NAME + r")\s+"
@@ -243,8 +211,6 @@ RELATION_PATTERNS: list[RelationPattern] = [
             re.UNICODE),
         subj_types={"PERSON"}, obj_types={"ORGANIZATION"}, confidence=0.82),
 
-    # ── partnered_with: Organization ↔ Organization ───────────────
-    # "ký thỏa thuận hợp tác [chiến lược] với"
     RelationPattern("signed_strategic_partnership",
         re.compile(
             r"(?P<org1>" + _NAME + r")\s+"
@@ -255,7 +221,6 @@ RELATION_PATTERNS: list[RelationPattern] = [
         ),
         subj_types={"ORGANIZATION"}, obj_types={"ORGANIZATION"}, confidence=0.92, bidirectional=True),
 
-    # "hợp tác chiến lược / ký kết chiến lược cùng/với"
     RelationPattern("strategic_partner",
         re.compile(
             r"(?P<org1>" + _NAME + r")\s+"
@@ -264,7 +229,6 @@ RELATION_PATTERNS: list[RelationPattern] = [
             re.UNICODE),
         subj_types={"ORGANIZATION"}, obj_types={"ORGANIZATION"}, confidence=0.85, bidirectional=True),
 
-    # "là đối tác lâu năm/lâu dài/chiến lược của"
     RelationPattern("partnered_with",
         re.compile(
             r"(?P<org1>" + _NAME + r")\s+l\u00e0\s+\u0111\u1ed1i\s+t\u00e1c"
@@ -274,7 +238,6 @@ RELATION_PATTERNS: list[RelationPattern] = [
         ),
         subj_types={"ORGANIZATION"}, obj_types={"ORGANIZATION"}, confidence=0.88, bidirectional=True),
 
-    # "hợp tác / liên doanh / liên kết với"
     RelationPattern("partnered_with",
         re.compile(
             r"(?P<org1>" + _NAME + r")\s+"
@@ -284,8 +247,6 @@ RELATION_PATTERNS: list[RelationPattern] = [
         ),
         subj_types={"ORGANIZATION"}, obj_types={"ORGANIZATION"}, confidence=0.72, bidirectional=True),
 
-    # ── competitor_of: Organization ↔ Organization ────────────────
-    # "là đối thủ / cạnh tranh / vượt mặt ... của/với"
     RelationPattern("competitor",
         re.compile(
             r"(?P<org1>" + _NAME + r")\s+"
@@ -296,8 +257,6 @@ RELATION_PATTERNS: list[RelationPattern] = [
             re.UNICODE),
         subj_types={"ORGANIZATION"}, obj_types={"ORGANIZATION"}, confidence=0.82, bidirectional=True),
 
-    # ── developed_by: Product → Organization ──────────────────────
-    # Active "ORG phát triển/ra mắt/sản xuất/tung ra PRODUCT"
     RelationPattern("developed",
         re.compile(
             r"(?P<company>" + _NAME + r")\s+"
@@ -315,7 +274,6 @@ RELATION_PATTERNS: list[RelationPattern] = [
             re.UNICODE),
         subj_types={"ORGANIZATION"}, obj_types={"PRODUCT"}, confidence=0.85, reverse_edge=True),
 
-    # Passive "PRODUCT do/bởi ORG phát triển/xây dựng"
     RelationPattern("developed_by_passive",
         re.compile(
             r"(?P<product>" + _NAME + r")\s+"
@@ -326,7 +284,6 @@ RELATION_PATTERNS: list[RelationPattern] = [
         ),
         subj_types={"PRODUCT"}, obj_types={"ORGANIZATION"}, confidence=0.88),
 
-    # Passive "PRODUCT được ORG phát triển"
     RelationPattern("developed_by_passive",
         re.compile(
             r"(?P<product>" + _NAME + r")\s+"
@@ -336,8 +293,6 @@ RELATION_PATTERNS: list[RelationPattern] = [
         ),
         subj_types={"PRODUCT"}, obj_types={"ORGANIZATION"}, confidence=0.85),
 
-    # ── headquartered_in: Organization → Location ─────────────────
-    # "ORG đặt tại / có trụ sở tại / tọa lạc tại / có địa chỉ tại LOC"
     RelationPattern("headquartered_in",
         re.compile(
             r"(?P<org>" + _NAME + r")\s+"
@@ -349,7 +304,6 @@ RELATION_PATTERNS: list[RelationPattern] = [
             re.UNICODE),
         subj_types={"ORGANIZATION"}, obj_types={"LOCATION"}, confidence=0.75),
 
-    # "Trụ sở [chính] của ORG [đặt] tại LOC"
     RelationPattern("headquartered_in",
         re.compile(
             r"[Tt]r\u1ee5\s+s\u1edf\s+(?:ch\u00ednh\s+)?c\u1ee7a\s+(?:c\u00f4ng\s+ty\s+)?(?P<org>" + _NAME + r")"
@@ -358,8 +312,6 @@ RELATION_PATTERNS: list[RelationPattern] = [
         ),
         subj_types={"ORGANIZATION"}, obj_types={"LOCATION"}, confidence=0.88),
 
-    # ── has_office: Organization → Location ───────────────────────
-    # "mở [thêm] văn phòng [đại diện] / chi nhánh tại"
     RelationPattern("opened_office_in",
         re.compile(
             r"(?P<org>" + _NAME + r")\s+"
@@ -370,7 +322,6 @@ RELATION_PATTERNS: list[RelationPattern] = [
         ),
         subj_types={"ORGANIZATION"}, obj_types={"LOCATION"}, confidence=0.85),
 
-    # "có văn phòng / chi nhánh tại"
     RelationPattern("has_office",
         re.compile(
             r"(?P<org>" + _NAME + r")\s+"
@@ -381,8 +332,6 @@ RELATION_PATTERNS: list[RelationPattern] = [
         ),
         subj_types={"ORGANIZATION"}, obj_types={"LOCATION"}, confidence=0.82),
 
-    # ── operates_in: Organization → Industry ──────────────────────
-    # Requires explicit "thuộc lĩnh vực / chuyên về / trong ngành" — NOT just co-occurrence
     RelationPattern("operates_in",
         re.compile(
             r"(?P<org>" + _NAME + r")\s+"
@@ -392,7 +341,6 @@ RELATION_PATTERNS: list[RelationPattern] = [
             re.UNICODE),
         subj_types={"ORGANIZATION"}, obj_types={"INDUSTRY"}, confidence=0.80),
 
-    # ── launched_at: Product → Event ──────────────────────────────
     RelationPattern("launched_at_event",
         re.compile(
             r"(?P<product>" + _NAME + r")\s+"
@@ -403,7 +351,6 @@ RELATION_PATTERNS: list[RelationPattern] = [
         ),
         subj_types={"PRODUCT"}, obj_types={"EVENT"}, confidence=0.88),
 
-    # ── held_in: Event → Location ──────────────────────────────────
     RelationPattern("held_in",
         re.compile(
             r"(?P<event>" + _NAME + r")\s+"
@@ -413,8 +360,6 @@ RELATION_PATTERNS: list[RelationPattern] = [
         ),
         subj_types={"EVENT"}, obj_types={"LOCATION"}, confidence=0.85),
 
-    # ── has_revenue: Organization → Money ─────────────────────────
-    # "ORG báo cáo/ghi nhận/đạt doanh thu X" / "doanh thu X của ORG"
     RelationPattern("has_revenue",
         re.compile(
             r"(?P<org>" + _NAME + r")\s+"
@@ -426,7 +371,6 @@ RELATION_PATTERNS: list[RelationPattern] = [
         ),
         subj_types={"ORGANIZATION"}, obj_types={"MONEY"}, confidence=0.82),
 
-    # "doanh thu của ORG là/đạt X"
     RelationPattern("has_revenue",
         re.compile(
             r"doanh\s+thu(?:\s+(?:c\u1ee7a|c\u00f4ng\s+ty))?\s+(?P<org>" + _NAME + r")"
@@ -436,8 +380,6 @@ RELATION_PATTERNS: list[RelationPattern] = [
         ),
         subj_types={"ORGANIZATION"}, obj_types={"MONEY"}, confidence=0.80),
 
-    # ── has_value: Organization/Product → Money ────────────────────
-    # "ORG/PRODUCT với giá trị / trị giá X"
     RelationPattern("has_value",
         re.compile(
             r"(?P<subj>" + _NAME + r")\s+(?:v\u1edbi\s+)?(?:gi\u00e1\s+tr\u1ecb|tr\u1ecb\s+gi\u00e1)"
@@ -446,7 +388,6 @@ RELATION_PATTERNS: list[RelationPattern] = [
         ),
         subj_types={"ORGANIZATION"}, obj_types={"MONEY"}, confidence=0.80),
 
-    # ── established_in: Organization → Date ───────────────────────
     RelationPattern("established_in",
         re.compile(
             r"(?P<org>" + _NAME + r")\s*(?:\([^)]+\))?\s*"
@@ -457,8 +398,6 @@ RELATION_PATTERNS: list[RelationPattern] = [
         ),
         subj_types={"ORGANIZATION"}, obj_types={"DATE"}, confidence=0.85),
 
-    # ── occurred_in: Organization/Event → Date ────────────────────
-    # "ORG ... vào năm X" / "ORG ... trong năm X"
     RelationPattern("occurred_in",
         re.compile(
             r"(?P<subj>" + _NAME + r")\s+"
@@ -470,17 +409,11 @@ RELATION_PATTERNS: list[RelationPattern] = [
         subj_types={"ORGANIZATION", "EVENT", "PRODUCT"}, obj_types={"DATE"}, confidence=0.65),
 ]
 
-
-# ═══════════════════════════════════════════════════════════════════
-# §3 — Entity matching (Jaccard-based)
-# ═══════════════════════════════════════════════════════════════════
-
 def _jaccard(a: str, b: str) -> float:
     sa, sb = set(a.lower().split()), set(b.lower().split())
     if not sa or not sb:
         return 0.0
     return len(sa & sb) / len(sa | sb)
-
 
 def _best_entity_match(
     matched_text: str,
@@ -509,19 +442,12 @@ def _best_entity_match(
             best_s, best_e = s, e
     return best_e if best_s >= threshold else None
 
-
-# ═══════════════════════════════════════════════════════════════════
-# §4 — Compiled regex cache (Tầng 3 co-occurrence)
-# ═══════════════════════════════════════════════════════════════════
-
 _search_cache: dict[str, re.Pattern] = {}
-
 
 def _get_search_pat(name: str) -> re.Pattern:
     if name not in _search_cache:
         _search_cache[name] = re.compile(re.escape(name), re.IGNORECASE)
     return _search_cache[name]
-
 
 def _find_pos(e: Entity, sent: str) -> int:
     best_pos = -1
@@ -533,11 +459,6 @@ def _find_pos(e: Entity, sent: str) -> int:
                 best_pos = p
     return best_pos
 
-
-# ═══════════════════════════════════════════════════════════════════
-# §5 — Entity building helpers
-# ═══════════════════════════════════════════════════════════════════
-
 def merge_adjacent_entities(raw_entities: list[dict]) -> list[dict]:
     if not raw_entities:
         return raw_entities
@@ -547,7 +468,6 @@ def merge_adjacent_entities(raw_entities: list[dict]) -> list[dict]:
         same_type = nxt["ner_type"] == cur["ner_type"]
         cur_words = cur.get("words") or []
         nxt_words = nxt.get("words") or []
-        # Only merge if BOTH have valid (non-empty) word indices
         cur_last  = cur_words[-1] if cur_words else None
         nxt_first = nxt_words[0]  if nxt_words else None
         if same_type and cur_last is not None and nxt_first is not None and nxt_first == cur_last + 1:
@@ -559,17 +479,14 @@ def merge_adjacent_entities(raw_entities: list[dict]) -> list[dict]:
     merged.append(cur)
     return merged
 
-
 def _norm(value: str) -> str:
     return re.sub(r"\s+", " ", value).strip()
-
 
 def _is_informative(name: str, gtype: str) -> bool:
     norm = _norm(name)
     if len(norm) < 2 or re.fullmatch(r"[\W_]+", norm):
         return False
 
-    # Sanity check: entity name không được quá dài (dấu hiệu merge/capture lỗi)
     _MAX_WORDS = {"Organization": 10, "Person": 6, "Location": 8,
                   "Product": 8, "Event": 10, "Date": 6,
                   "Money": 6, "Industry": 6, "Percent": 4}
@@ -577,23 +494,19 @@ def _is_informative(name: str, gtype: str) -> bool:
     if len(norm.split()) > max_w:
         return False
 
-    # Loại rác viết thường (Proper nouns không được viết thường hoàn toàn)
     if gtype in ["Person", "Organization"] and norm.islower():
         return False
         
     low = norm.lower().replace(",", " ").replace(".", " ")
     toks = [t for t in low.split() if t]
     
-    # Lọc rác một chữ chung chung cho Organization
     if gtype == "Organization":
         bad_org_words = {"công ty", "tập đoàn", "Tập đoàn công ty", "tổng công ty", "group", "holdings", "inc", "corp", "hiệp hội", "ngân hàng", "ban", "ngành", "phòng", "văn phòng", "chi nhánh", "trung tâm"}
         if low in bad_org_words:
             return False
-        # Các cụm kiểu "Group phòng", "Group chính"
         if len(toks) <= 3 and all(t in {"group", "phòng", "ban", "chính", "nghiệp", "công"} for t in toks):
             return False
             
-    # Lọc rác lỗi lặp từ PhoBERT
     if "chính chính" in low or "nghiên nghiên" in low:
         return False
     if gtype == "Date":
@@ -613,10 +526,8 @@ def _is_informative(name: str, gtype: str) -> bool:
     if gtype == "Industry":
         if low in _GENERIC_INDUSTRY_WORDS:
             return False
-        # Filter single-word or too-short Industry entities (likely NER noise)
         if len(norm) < 4 or (len(toks) == 1 and len(toks[0]) <= 4):
             return False
-        # Filter if ends with capitalized word or person-title — likely NER boundary bleed
         _PERSON_TITLES = {"giáo", "ông", "bà", "anh", "chị", "tiến", "sĩ", "phó", "giám", "tổng"}
         orig_toks = norm.split()
         last_orig = orig_toks[-1] if orig_toks else ""
@@ -626,27 +537,15 @@ def _is_informative(name: str, gtype: str) -> bool:
         return False
     return True
 
-
 def _is_noisy_date(e: Entity) -> bool:
     return e.type == "Date" and not any(c.isdigit() for c in e.name)
-
-
-# ═══════════════════════════════════════════════════════════════════
-# §6 — Dedup helpers
-# ═══════════════════════════════════════════════════════════════════
 
 def _pk(a: str, b: str) -> tuple[str, str]:
     return (min(a, b), max(a, b))
 
-
 def _tk(s: str, t: str, lbl: str) -> tuple[str, str, str]:
     a, b = (s, t) if s <= t else (t, s)
     return (a, b, lbl)
-
-
-# ═══════════════════════════════════════════════════════════════════
-# §7 — Tầng 1: Pattern-based
-# ═══════════════════════════════════════════════════════════════════
 
 def _extract_pattern_relations(
     entities: list[Entity],
@@ -704,11 +603,9 @@ def _extract_pattern_relations(
                         seen_tk.add(tkr)
                         relations.append(Relation(source=oe.id, target=se.id, label=lbl))
 
-    # Tầng 1b — Pronoun/context resolution for headquartered_in & has_office
     _resolve_pronoun_relations(entities, sentences, relations, seen_tk, seen_pk)
 
     return relations, seen_pk
-
 
 def _resolve_pronoun_relations(
     entities: list[Entity],
@@ -759,11 +656,6 @@ def _resolve_pronoun_relations(
             seen_pk.add(_pk(last_org.id, loc_e.id))
             relations.append(Relation(source=last_org.id, target=loc_e.id, label=lbl))
 
-
-# ═══════════════════════════════════════════════════════════════════
-# §8 — Tầng 2: KB enrichment (same-sentence evidence only)
-# ═══════════════════════════════════════════════════════════════════
-
 def _extract_kb_relations(
     entities: list[Entity],
     sentences: list[str],
@@ -809,11 +701,6 @@ def _extract_kb_relations(
 
     return relations
 
-
-# ═══════════════════════════════════════════════════════════════════
-# §9 — Graph Structuring (Alias & Coreference)
-# ═══════════════════════════════════════════════════════════════════
-
 def _is_camelcase_of(alias: str, primary: str) -> bool:
     """Kiểm tra alias có phải là CamelCase viết tắt của primary không.
     VD: SaoVietTech → 'sao', 'viet', 'tech' đều có trong 'Công nghệ Sao Việt'."""
@@ -827,11 +714,9 @@ def _is_camelcase_of(alias: str, primary: str) -> bool:
     matches = sum(1 for p in camel_parts if p in primary.lower() or p in p_unaccent)
     return matches >= max(2, len(camel_parts) - 1)
 
-
 def _resolve_aliases(entities: list[Entity], text: str) -> list[Entity]:
     alias_map = {}
     
-    # 1. Ngoặc đơn: "Công ty Cổ phần Công nghệ Sao Việt (SaoVietTech)"
     for m in re.finditer(r"([A-Z\u00C0-\u1EF9][\w\s,\u00C0-\u1EF9&]+)\s*\(\s*([^)]+)\s*\)", text):
         full = _norm(m.group(1))
         al = _norm(m.group(2))
@@ -844,7 +729,6 @@ def _resolve_aliases(entities: list[Entity], text: str) -> list[Entity]:
             target = best_ename.lower() if best_ename else full.lower()
             alias_map[al.lower()] = target
 
-    # 2. Org-org: CHỈ merge qua CamelCase rõ ràng (không dùng word-subset vì merge sai)
     orgs      = [e for e in entities if e.type == "Organization"]
     org_texts = sorted([e.name for e in orgs], key=len, reverse=True)
     for i, primary in enumerate(org_texts):
@@ -853,7 +737,6 @@ def _resolve_aliases(entities: list[Entity], text: str) -> list[Entity]:
             if a_low not in alias_map and _is_camelcase_of(alias, primary):
                 alias_map[a_low] = primary.lower()
 
-    # 3. Xử lý Person
     pers = [e for e in entities if e.type == "Person"]
     per_texts = sorted([e.name for e in pers], key=len, reverse=True)
     for i, primary in enumerate(per_texts):
@@ -864,7 +747,6 @@ def _resolve_aliases(entities: list[Entity], text: str) -> list[Entity]:
                 if a_low in p_low:
                      alias_map[a_low] = p_low
 
-    # Thống nhất node (cycle-safe)
     merged: dict[str, Entity] = {}
 
     def get_root(name_lower: str) -> str:
@@ -883,7 +765,6 @@ def _resolve_aliases(entities: list[Entity], text: str) -> list[Entity]:
         else:
             primary_e = merged[root_low]
             if e.name.lower() != primary_e.name.lower() and e.name not in primary_e.aliases:
-                # Chỉ add alias nếu nó được phát hiện qua parenthetical/camelcase
                 if e.name.lower() in alias_map:
                     primary_e.aliases.append(e.name)
                     p_name = primary_e.name
@@ -894,7 +775,6 @@ def _resolve_aliases(entities: list[Entity], text: str) -> list[Entity]:
                     primary_e.properties.append(p)
 
     return list(merged.values())
-
 
 def _fold_properties(
     entities: list[Entity],
@@ -928,13 +808,7 @@ def _fold_properties(
 
     return filtered_entities, final_relations
 
-
-# ═══════════════════════════════════════════════════════════════════
-# §9.5 — Context-based Product detection
-# ═══════════════════════════════════════════════════════════════════
-
 _PRODUCT_CONTEXT_PATTERNS: list[re.Pattern] = [
-    # "sản phẩm/giải pháp/... mang tên/có tên NAME"
     re.compile(
         r"(?:sản\s+phẩm|gi\u1ea3i\s+ph\u00e1p|ph\u1ea7n\s+m\u1ec1m|\u1ee9ng\s+d\u1ee5ng|h\u1ec7\s+th\u1ed1ng|d\u1ecbch\s+v\u1ee5)"
         r"(?:\s+[\w\s\u00C0-\u1EF9]{0,40}?)?"
@@ -942,20 +816,17 @@ _PRODUCT_CONTEXT_PATTERNS: list[re.Pattern] = [
         r"(?P<name>[A-Z][\w]*(?:\s+[A-Z][\w]*)*)",
         re.UNICODE,
     ),
-    # "nền tảng/platform NAME"
     re.compile(
         r"(?:n\u1ec1n\s+t\u1ea3ng|platform)\s+"
         r"(?P<name>[A-Z][\w]*(?:\s+[A-Z][\w]*)*)",
         re.UNICODE,
     ),
-    # "sản phẩm NAME do/được ORG phát triển" - NAME trước "do"
     re.compile(
         r"(?:s\u1ea3n\s+ph\u1ea9m|gi\u1ea3i\s+ph\u00e1p)\s+"
         r"(?P<name>[A-Z][\w]*(?:\s+[A-Z][\w]*)*)\s+"
         r"(?:do|b\u1edfi|\u0111\u01b0\u1ee3c)",
         re.UNICODE,
     ),
-    # "ra mắt sản phẩm NAME" / "giới thiệu NAME"
     re.compile(
         r"(?:ra\s+m\u1eaft|gi\u1edbi\s+thi\u1ec7u|c\u00f4ng\s+b\u1ed1)\s+"
         r"(?:s\u1ea3n\s+ph\u1ea9m\s+)?"
@@ -964,7 +835,6 @@ _PRODUCT_CONTEXT_PATTERNS: list[re.Pattern] = [
         re.UNICODE,
     ),
 ]
-
 
 def _detect_products_from_context(
     text: str,
@@ -995,11 +865,6 @@ def _detect_products_from_context(
             existing_lower.add(name.lower())
 
     return new_products
-
-
-# ═══════════════════════════════════════════════════════════════════
-# §9.6 — Contextual relation extractor (appositive, compound, research)
-# ═══════════════════════════════════════════════════════════════════
 
 def _extract_contextual_relations(
     entities: list[Entity],
@@ -1033,10 +898,8 @@ def _extract_contextual_relations(
         rels.append(Relation(source=src.id, target=tgt.id, label=lbl))
         return True
 
-    # ── (1) Appositive / compound headquartered_in ────────────────
     _LOC_PREFIX = r"(?:(?:qu\u1eadn|huy\u1ec7n|t\u1ec9nh|tp\.?|th\u00e0nh\s+ph\u1ed1)\s+)?"
 
-    # "ORG, một doanh nghiệp có trụ sở tại LOC"
     appositive_hq = re.compile(
         r"(?P<org>" + _NAME + r")"
         r"(?:\s+Inc\.?|\s+Corp\.?|\s+Co\.?|\s+JSC\.?)?"
@@ -1046,7 +909,6 @@ def _extract_contextual_relations(
         + _LOC_PREFIX + r"(?P<loc>" + _NAME + r")",
         re.UNICODE,
     )
-    # "ORG [bất kỳ text <= 50 ký tự] và có trụ sở tại LOC"
     compound_hq = re.compile(
         r"(?P<org>" + _NAME + r")"
         r"(?:[^.]{0,60}?)"
@@ -1062,8 +924,6 @@ def _extract_contextual_relations(
                 if org_e and loc_e:
                     _add(org_e, loc_e, "headquartered_in")
 
-    # ── (2) Compound "và là đối tác" ──────────────────────────────
-    # "Hikari Group có trụ sở tại Tokyo và là đối tác lâu năm của Sumida Holdings"
     compound_partner = re.compile(
         r"v\u00e0\s+l\u00e0\s+\u0111\u1ed1i\s+t\u00e1c"
         r"\s+(?:l\u00e2u\s+(?:n\u0103m|d\u00e0i)|chi\u1ebfn\s+l\u01b0\u1ee3c)"
@@ -1087,8 +947,6 @@ def _extract_contextual_relations(
                 _add(subj_org, org2_e, "partnered_with")
                 _add(org2_e, subj_org, "partnered_with")
 
-    # ── (3) Research collaboration → developed_by ─────────────────
-    # "VisionX được xây dựng dựa trên các nghiên cứu hợp tác với ĐHBK Hà Nội"
     research_dev = re.compile(
         r"(?P<product>" + _NAME + r")"
         r"\s+\u0111\u01b0\u1ee3c\s+(?:x\u00e2y\s+d\u1ef1ng|ph\u00e1t\s+tri\u1ec3n)"
@@ -1105,9 +963,6 @@ def _extract_contextual_relations(
             if prod_e and org_e:
                 _add(prod_e, org_e, "developed_by")
 
-    # ── (4) operates_in: ORG + Industry co-occurrence in sentence ─
-    # Chỉ link khi ORG và Industry cùng trong câu VÀ có keyword rõ ràng
-    # Tránh false positive: "ORG cạnh tranh trong ngành X" không có nghĩa ORG operates_in X
     _operate_explicit = re.compile(
         r"(?:thu\u1ed9c\s+l\u0129nh\s+v\u1ef1c|chuy\u00ean\s+v\u1ec1|chuy\u00ean\s+trong"
         r"|ho\u1ea1t\s+\u0111\u1ed9ng\s+trong\s+l\u0129nh\s+v\u1ef1c|trong\s+ng\u00e0nh"
@@ -1129,12 +984,10 @@ def _extract_contextual_relations(
             for ind_e in inds_here:
                 _add(org_e, ind_e, "operates_in")
 
-    # ── (5) Date relations: established_in, occurred_in ──────────
     dates = [e for e in entities if e.type == "Date"]
     events = [e for e in entities if e.type == "Event"]
     products_all = [e for e in entities if e.type == "Product"]
 
-    # "ORG được thành lập ... tại/vào năm DATE"  → established_in
     _est_pat = re.compile(
         r"(?P<org>" + _NAME + r")\s*(?:\([^)]+\))?\s*"
         r"(?:\u0111\u01b0\u1ee3c\s+)?th\u00e0nh\s+l\u1eadp"
@@ -1149,8 +1002,6 @@ def _extract_contextual_relations(
             if org_e and dt_e:
                 _add(org_e, dt_e, "established_in")
 
-    # "Trong năm X, ORG ..." / "Năm X, ORG ..." → occurred_in
-    # Chỉ nối ORG/Event XUẤT HIỆN TRONG CÙNG CÂU có year intro (không lan sang câu khác)
     _year_intro = re.compile(
         r"^(?:[Tt]rong\s+)?(?:[Nn]\u0103m|[Tt]h\u00e1ng\s+\d+\s+n\u0103m)\s+"
         r"(?:t\u00e0i\s+ch\u00ednh\s+)?(?P<date>\d{4})",
@@ -1169,7 +1020,6 @@ def _extract_contextual_relations(
         for ev_e in [e for e in events if _find_pos(e, sent) >= 0]:
             _add(ev_e, dt_e, "occurred_in")
 
-    # "PRODUCT ra mắt vào ngày DATE" → occurred_in
     _launch_date = re.compile(
         r"(?P<product>" + _NAME + r")\s+(?:ch\u00ednh\s+th\u1ee9c\s+)?ra\s+m\u1eaft"
         r"\s+v\u00e0o\s+(?:ng\u00e0y\s+)?(?P<date>[\d/]+)",
@@ -1183,7 +1033,6 @@ def _extract_contextual_relations(
             if prod_e and dt_e:
                 _add(prod_e, dt_e, "occurred_in")
 
-    # ── (6) held_in: Event → Location ────────────────────────────
     _held_pat = re.compile(
         r"(?P<event>" + _NAME + r")\s+t\u1ed5\s+ch\u1ee9c"
         r"\s+(?:\u1edf\s+|t\u1ea1i\s+)(?:TP\.?\s+)?(?P<loc>" + _NAME + r")",
@@ -1195,7 +1044,6 @@ def _extract_contextual_relations(
             loc_e = _best_entity_match(m.group("loc").strip(), locs, {"LOCATION"})
             if ev_e and loc_e:
                 _add(ev_e, loc_e, "held_in")
-        # "tổ chức ở TP. Hồ Chí Minh" — event is last seen event in sentence
         m2 = re.search(
             r"t\u1ed5\s+ch\u1ee9c\s+(?:\u1edf\s+|t\u1ea1i\s+)(?:TP\.?\s+)?(?P<loc>" + _NAME + r")",
             sent, re.UNICODE,
@@ -1206,8 +1054,6 @@ def _extract_contextual_relations(
                 if loc_e:
                     _add(ev_e, loc_e, "held_in")
 
-    # ── (5b) Person occurred_in Date ──────────────────────────────
-    # "PERSON từng làm việc / công tác tại ORG từ năm X"
     persons = [e for e in entities if e.type == "Person"]
     _person_date_pat = re.compile(
         r"(?P<person>" + _NAME + r")\s+"
@@ -1223,8 +1069,6 @@ def _extract_contextual_relations(
             if per_e and dt_e:
                 _add(per_e, dt_e, "occurred_in")
 
-    # ── (5c) "Năm X, ORG" / "Tháng X năm Y, ORG" intro → occurred_in ─
-    # Chỉ link trong cùng câu, không cross-sentence
     _temporal_intro = re.compile(
         r"^(?:[Tt]rong\s+)?(?:[Tt]h\u00e1ng\s+\d+\s+)?[Nn]\u0103m\s+"
         r"(?:t\u00e0i\s+ch\u00ednh\s+)?(?P<date>\d{4})",
@@ -1238,7 +1082,6 @@ def _extract_contextual_relations(
         dt_e = next((d for d in dates if dt_year in d.name), None)
         if not dt_e:
             continue
-        # Link only entities appearing in THIS sentence
         for org_e in [e for e in orgs if _find_pos(e, sent) >= 0]:
             _add(org_e, dt_e, "occurred_in")
         for ev_e in [e for e in events if _find_pos(e, sent) >= 0]:
@@ -1246,8 +1089,6 @@ def _extract_contextual_relations(
         for prod_e in [e for e in products_all if _find_pos(e, sent) >= 0]:
             _add(prod_e, dt_e, "occurred_in")
 
-    # ── (5d) Bare "năm X" fallback — same-sentence only ──────────
-    # Link orphan date to closest ORG/PERSON in the SAME sentence
     _year_bare = re.compile(r"\bn\u0103m\s+(?P<y>\d{4})\b", re.UNICODE)
     for sent in sentences:
         for m in _year_bare.finditer(sent):
@@ -1257,7 +1098,6 @@ def _extract_contextual_relations(
                 continue
             if any(r.source == dt_e.id or r.target == dt_e.id for r in rels):
                 continue
-            # Closest entity in same sentence only
             cands = [e for e in orgs + persons + products_all if _find_pos(e, sent) >= 0]
             if not cands:
                 continue
@@ -1265,10 +1105,8 @@ def _extract_contextual_relations(
             closest = min(cands, key=lambda e: abs(_find_pos(e, sent) - yr_pos))
             _add(closest, dt_e, "occurred_in")
 
-    # ── (7) has_revenue / has_value: Org/Product → Money ─────────
     moneys = [e for e in entities if e.type == "Money"]
 
-    # Chung: helper để tìm Money entity từ text fragment
     def _match_money(text_fragment: str) -> Optional[Entity]:
         frag = text_fragment.strip()
         digits = re.findall(r"[\d,\.]+", frag)
@@ -1280,7 +1118,6 @@ def _extract_contextual_relations(
             None,
         )
 
-    # has_revenue: "ORG báo cáo/ghi nhận/đạt doanh thu X"
     _revenue_pat = re.compile(
         r"(?P<org>" + _NAME + r")\s+"
         r"(?:b\u00e1o\s+c\u00e1o|ghi\s+nh\u1eadn|thu\s+v\u1ec1)"
@@ -1296,14 +1133,12 @@ def _extract_contextual_relations(
             if org_e and mn_e:
                 _add(org_e, mn_e, "has_revenue")
 
-    # has_value: "cho ORG với giá trị X" (buyer gets value)
     _value_buyer = re.compile(
         r"cho\s+(?P<subj>" + _NAME + r")\s*(?:\([^)]+\))?\s*"
         r"v\u1edbi\s+(?:gi\u00e1\s+tr\u1ecb|tr\u1ecb\s+gi\u00e1)\s+"
         r"(?P<money>[\d][[\d,\.]*\s*(?:tri\u1ec7u|t\u1ef7|ngh\u00ecn)?\s*(?:USD|VND|VN\u0110|\u0111\u1ed3ng|\$)?)",
         re.UNICODE | re.IGNORECASE,
     )
-    # has_value: "với giá trị X" bare — link to closest preceding ORG/PRODUCT in same sentence
     _value_bare = re.compile(
         r"v\u1edbi\s+(?:gi\u00e1\s+tr\u1ecb|tr\u1ecb\s+gi\u00e1)\s+"
         r"(?P<money>[\d][[\d,\.]*\s*(?:tri\u1ec7u|t\u1ef7|ngh\u00ecn)?\s*(?:USD|VND|VN\u0110|\u0111\u1ed3ng|\$)?)",
@@ -1324,7 +1159,6 @@ def _extract_contextual_relations(
             if not mn_e or mn_e.id in matched_money:
                 continue
             match_pos = m.start()
-            # Find closest preceding ORG or PRODUCT in same sentence
             cands = [e for e in orgs + products_all if _find_pos(e, sent) >= 0]
             if not cands:
                 continue
@@ -1332,10 +1166,6 @@ def _extract_contextual_relations(
             if _add(closest, mn_e, "has_value"):
                 matched_money.add(mn_e.id)
 
-    # ── (∞) Orphan fallback — SAME-SENTENCE only ─────────────────
-    # Nối entity mồ côi vào entity gần nhất TRONG CÙNG CÂU.
-    # KHÔNG dùng global fallback để tránh kết nối sai với data mới.
-    # subject → orphan (orphan_is_target=True)
     _ORPHAN_FALLBACK: dict[str, tuple[list[Entity], str]] = {
         "Date":    (orgs + products_all + events, "occurred_in"),
         "Money":   (orgs + products_all,          "has_value"),
@@ -1362,22 +1192,11 @@ def _extract_contextual_relations(
                     if dist < best_dist2:
                         best_dist2 = dist
                         best_target2 = cand
-            # Only link if found in same sentence (best_dist2 < 999999)
             if best_target2 and best_dist2 < 999999:
                 _add(best_target2, fb_e, fb_lbl)
 
     return rels
 
-
-# ═══════════════════════════════════════════════════════════════════
-# §9.64 — Final orphan connector
-# Đảm bảo mọi entity đều có ít nhất 1 edge, dùng expanding-window search
-# ═══════════════════════════════════════════════════════════════════
-
-# Quy tắc kết nối theo type của orphan:
-# (relation, partner_types, orphan_is_subject)
-# orphan_is_subject=True  → Relation(orphan, partner, label)
-# orphan_is_subject=False → Relation(partner, orphan, label)
 _ORPHAN_RULES: dict[str, list[tuple[str, set[str], bool]]] = {
     "Date": [
         ("occurred_in", {"Organization", "Event", "Product"}, False),
@@ -1404,7 +1223,6 @@ _ORPHAN_RULES: dict[str, list[tuple[str, set[str], bool]]] = {
     "Event": [
         ("held_in",    {"Location"},    True),
         ("occurred_in",{"Date"},        True),
-        # Nếu không có Location/Date, link Event với Org qua occurred_in (ngược chiều)
         ("occurred_in",{"Organization","Product"}, False),
     ],
     "Person": [
@@ -1417,7 +1235,6 @@ _ORPHAN_RULES: dict[str, list[tuple[str, set[str], bool]]] = {
         ("operates_in",      {"Industry"},     True),
     ],
 }
-
 
 def _connect_all_orphans(
     entities: list[Entity],
@@ -1451,7 +1268,6 @@ def _connect_all_orphans(
         connected.add(tgt.id)
         return True
 
-    # Pre-compute sentence index for each entity
     def sent_idx(e: Entity) -> int:
         for i, s in enumerate(sentences):
             if _find_pos(e, s) >= 0:
@@ -1481,7 +1297,6 @@ def _connect_all_orphans(
         for rel_lbl, partner_types, orphan_is_subject in rules:
             if linked:
                 break
-            # Gather eligible partners
             partners = [
                 e for e in entities
                 if e.type in partner_types and e.id != orphan.id
@@ -1489,7 +1304,6 @@ def _connect_all_orphans(
             if not partners:
                 continue
 
-            # Sort by proximity (sentence distance), prefer connected partners
             partners.sort(key=lambda p: proximity_key(orphan, p))
 
             for partner in partners:
@@ -1503,19 +1317,7 @@ def _connect_all_orphans(
 
     return new_rels
 
-
-# ═══════════════════════════════════════════════════════════════════
-# §9.65 — Keyword-bridge extractor
-# Tìm relation bằng cách tìm keyword giữa 2 entities đã biết trong câu.
-# Không dùng _NAME regex để capture — tránh miss khi tên chứa lowercase.
-# ═══════════════════════════════════════════════════════════════════
-
-# Keyword patterns theo relation type
-# Format: (label, keyword_regex, subj_types, obj_types, allow_reverse)
-# allow_reverse=True: thử chiều ngược nếu không tìm thấy chiều thuận
-#                     → dùng cho quan hệ có thể xuất hiện ở hai hướng trong câu
 _KW_BRIDGE: list[tuple[str, re.Pattern, set[str], set[str], bool]] = [
-    # Bidirectional: subject/object có thể xuất hiện ở bất kỳ vị trí nào quanh keyword
     ("partnered_with",
      re.compile(
          r"h\u1ee3p\s+t\u00e1c|li\u00ean\s+k\u1ebft|li\u00ean\s+doanh|li\u00ean\s+minh"
@@ -1529,7 +1331,6 @@ _KW_BRIDGE: list[tuple[str, re.Pattern, set[str], set[str], bool]] = [
          re.IGNORECASE | re.UNICODE),
      {"Organization"}, {"Organization"}, True),
 
-    # Directional: subject luôn TRƯỚC keyword trong câu xuôi
     ("headquartered_in",
      re.compile(
          r"tr\u1ee5\s+s\u1edf\s+t\u1ea1i|\u0111\u1eb7t\s+t\u1ea1i"
@@ -1544,14 +1345,12 @@ _KW_BRIDGE: list[tuple[str, re.Pattern, set[str], set[str], bool]] = [
          re.IGNORECASE | re.UNICODE),
      {"Organization"}, {"Location"}, False),
 
-    # founded: reverse OK (passive "được thành lập bởi")
     ("founded",
      re.compile(
          r"s\u00e1ng\s+l\u1eadp|\u0111\u1ed3ng\s+s\u00e1ng\s+l\u1eadp|th\u00e0nh\s+l\u1eadp|kh\u1edfi\s+x\u01b0\u1edbng",
          re.IGNORECASE | re.UNICODE),
      {"Person"}, {"Organization"}, True),
 
-    # developed_by: reverse OK (passive "được phát triển bởi")
     ("developed_by",
      re.compile(
          r"ph\u00e1t\s+tri\u1ec3n|x\u00e2y\s+d\u1ef1ng|thi\u1ebft\s+k\u1ebf",
@@ -1596,7 +1395,6 @@ _KW_BRIDGE: list[tuple[str, re.Pattern, set[str], set[str], bool]] = [
          re.IGNORECASE | re.UNICODE),
      {"Organization", "Product"}, {"Money"}, False),
 
-    # established_in: KHÔNG reverse để tránh link nhầm date từ context khác
     ("established_in",
      re.compile(
          r"(?<!\w)th\u00e0nh\s+l\u1eadp\s+(?:n\u0103m|v\u00e0o|t\u1eeb)"
@@ -1605,14 +1403,12 @@ _KW_BRIDGE: list[tuple[str, re.Pattern, set[str], set[str], bool]] = [
          re.IGNORECASE | re.UNICODE),
      {"Organization"}, {"Date"}, False),
 
-    # occurred_in: chỉ link org/event khi date rõ ràng sau keyword
     ("occurred_in",
      re.compile(
          r"v\u00e0o\s+n\u0103m\s+\d{4}|trong\s+n\u0103m\s+(?:t\u00e0i\s+ch\u00ednh\s+)?\d{4}",
          re.IGNORECASE | re.UNICODE),
      {"Organization", "Event", "Product"}, {"Date"}, False),
 ]
-
 
 def _extract_keyword_bridge(
     entities: list[Entity],
@@ -1641,7 +1437,6 @@ def _extract_keyword_bridge(
         rels.append(Relation(source=src.id, target=tgt.id, label=lbl))
         return True
 
-    # Pronoun/generic subject resolution: "Công ty", "Họ", "Tập đoàn" → last seen org
     _PRONOUN_SUBJ = re.compile(
         r"^(?:[Hh]\u1ecd|[Cc]\u00f4ng\s+ty|[Tt]\u1eadp\s+\u0111o\u00e0n|[Cc]\u00f4ng\s+ty\s+n\u00e0y"
         r"|[Cc]\u00f4ng\s+ty\s+tr\u00ean|[Nn]h\u00e0\s+m\u00e1y)\b",
@@ -1651,19 +1446,16 @@ def _extract_keyword_bridge(
     last_seen_org: Optional[Entity] = None
 
     for sent in sentences:
-        # Update last seen org from this sentence
         for e in orgs_in_context:
             if _find_pos(e, sent) >= 0:
                 last_seen_org = e
 
-        # Pre-compute entity positions in sentence
         ent_positions: list[tuple[int, Entity]] = []
         for e in entities:
             p = _find_pos(e, sent)
             if p >= 0:
                 ent_positions.append((p, e))
 
-        # If sentence starts with pronoun subject, inject last_seen_org at position 0
         if _PRONOUN_SUBJ.match(sent) and last_seen_org and \
                 not any(e.type == "Organization" for _, e in ent_positions):
             ent_positions.insert(0, (0, last_seen_org))
@@ -1677,19 +1469,14 @@ def _extract_keyword_bridge(
                 kw_start = km.start()
                 kw_end = km.end()
 
-                # Entities BEFORE the keyword (potential subjects)
                 before = [(p, e) for p, e in ent_positions if p < kw_start and e.type in subj_types]
-                # Entities AFTER the keyword (potential objects)
                 after  = [(p, e) for p, e in ent_positions if p >= kw_end and e.type in obj_types]
 
                 if before and after:
-                    # Closest subject (rightmost before keyword)
                     subj_e = max(before, key=lambda x: x[0])[1]
-                    # Closest object (leftmost after keyword)
                     obj_e  = min(after,  key=lambda x: x[0])[1]
                     _add(subj_e, obj_e, label)
                 elif allow_reverse:
-                    # Try reverse direction only for bidirectional or passive relations
                     before_rev = [(p, e) for p, e in ent_positions if p < kw_start and e.type in obj_types]
                     after_rev  = [(p, e) for p, e in ent_positions if p >= kw_end and e.type in subj_types]
                     if before_rev and after_rev:
@@ -1698,12 +1485,6 @@ def _extract_keyword_bridge(
                         _add(subj_e, obj_e, label)
 
     return rels
-
-
-# ═══════════════════════════════════════════════════════════════════
-# §9.7 — Multi-entity pattern extractor
-# Xử lý các cấu trúc danh sách: 'bởi A và B', 'như A và B'
-# ═══════════════════════════════════════════════════════════════════
 
 def _extract_multi_entity_relations(
     entities: list[Entity],
@@ -1719,7 +1500,6 @@ def _extract_multi_entity_relations(
     """
     rels: list[Relation] = []
 
-    # -- (1) Multi-founder: 'bởi PERSON1 và PERSON2'
     persons = [e for e in entities if e.type == "Person"]
     orgs    = [e for e in entities if e.type == "Organization"]
     for m in re.finditer(
@@ -1741,8 +1521,6 @@ def _extract_multi_entity_relations(
                     existing_pk.add(pk)
                     rels.append(Relation(source=pe.id, target=org_e.id, label="founded"))
 
-    # -- (2) Competitor list: 'như ORG1 và ORG2'
-    # Tìm câu chứa 'cạnh tranh ... như' và extract tất cả ORG được mention sau 'như'
     for m in re.finditer(
         r"(?P<main>[A-Z\u00C0-\u1EF9][\w\s\u00C0-\u1EF9&]+?)"
         r"(?:\s+m\u1edf\s+r\u1ed9ng)?\s+c\u1ee7ng\s+c\u1ed1\s+v\u1ecb\s+th\u1ebf\s+c\u1ea1nh\s+tranh"
@@ -1752,7 +1530,6 @@ def _extract_multi_entity_relations(
         main_e = _best_entity_match(m.group("main").strip(), orgs, {"ORGANIZATION"})
         if not main_e:
             continue
-        # Tách danh sách '... và ...'
         parts = re.split(r'\s+và\s+|,\s*', m.group("oc"))
         for part in parts:
             competitor_e = _best_entity_match(part.strip(), orgs, {"ORGANIZATION"})
@@ -1763,12 +1540,6 @@ def _extract_multi_entity_relations(
                     rels.append(Relation(source=main_e.id, target=competitor_e.id, label="competitor_of"))
 
     return rels
-
-
-
-# ═══════════════════════════════════════════════════════════════════
-# §10 — build_graph (entry point)
-# ═══════════════════════════════════════════════════════════════════
 
 def _output_guard(
     relations: list[Relation],
@@ -1790,7 +1561,6 @@ def _output_guard(
         clean.append(r)
     return clean
 
-
 def build_graph(raw_entities: list[dict], text: str) -> GraphData:
     """
     Strict relation extraction — whitelist only:
@@ -1802,7 +1572,6 @@ def build_graph(raw_entities: list[dict], text: str) -> GraphData:
     raw_entities = merge_adjacent_entities(raw_entities)
     sentences    = split_sentences(text)
 
-    # ── Build entities ─────────────────────────────────────────
     seen:     dict[tuple, str] = {}
     entities: list[Entity]     = []
 
@@ -1831,43 +1600,33 @@ def build_graph(raw_entities: list[dict], text: str) -> GraphData:
     if not entities:
         return GraphData(entities=[], relations=[])
 
-    # ── Detect Product entities from text context ──────────────
     new_products = _detect_products_from_context(text, entities, seen)
     entities.extend(new_products)
 
-    # ── Gộp Aliases Thực thể ───────────────────────────────────
     entities = _resolve_aliases(entities, text)
 
-    # ── Tầng 1 — Pattern-based ────────────────────────────────
     pat_rels, existing_pk = _extract_pattern_relations(entities, sentences)
     logger.debug("Tầng 1 (pattern): %d", len(pat_rels))
 
-    # ── Tầng 1.5 — Multi-entity patterns ──────────────────────
     multi_rels = _extract_multi_entity_relations(entities, text, existing_pk)
     logger.debug("Tầng 1.5 (multi-entity): %d", len(multi_rels))
 
-    # ── Tầng 1.6 — Contextual relations (appositive, compound, research)
     ctx_rels = _extract_contextual_relations(entities, sentences, text, existing_pk)
     logger.debug("Tầng 1.6 (contextual): %d", len(ctx_rels))
 
-    # ── Tầng 1.7 — Keyword-bridge (entity-aware, no _NAME capture) ─
     kw_rels = _extract_keyword_bridge(entities, sentences, existing_pk)
     logger.debug("Tầng 1.7 (keyword-bridge): %d", len(kw_rels))
 
-    # ── Tầng 2 — KB same-sentence enrichment ──────────────────
     kb_rels = _extract_kb_relations(entities, sentences, existing_pk)
     logger.debug("Tầng 2 (KB same-sentence): %d", len(kb_rels))
 
     all_rels = pat_rels + multi_rels + ctx_rels + kw_rels + kb_rels
 
-    # ── Fold thuộc tính vào Nodes ──────────────────────────────
     final_entities, final_relations = _fold_properties(entities, all_rels, [])
 
-    # ── Tầng ∞ — Kết nối mọi orphan còn lại ───────────────────
     orphan_rels = _connect_all_orphans(final_entities, final_relations, sentences, existing_pk)
     final_relations += orphan_rels
 
-    # ── Output guard ───────────────────────────────────────────
     entity_map = {e.id: e for e in final_entities}
     final_relations = _output_guard(final_relations, entity_map)
 
@@ -1878,11 +1637,6 @@ def build_graph(raw_entities: list[dict], text: str) -> GraphData:
         len(orphan_rels),
     )
     return GraphData(entities=final_entities, relations=final_relations)
-
-
-# ═══════════════════════════════════════════════════════════════════
-# §10 — predict_new_links
-# ═══════════════════════════════════════════════════════════════════
 
 def predict_new_links(
     entities: list[Entity],

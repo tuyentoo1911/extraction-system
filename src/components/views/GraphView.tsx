@@ -125,7 +125,6 @@ export default function GraphView({ data }: GraphViewProps) {
     const isDense = nodes.length > 20;
     const usePhysics = physicsEnabled && layoutMode === 'force';
 
-    // Physics OFF: khóa node tại vị trí hiện tại để đồ thị đứng yên hẳn.
     nodes.forEach((n: any) => {
       if (usePhysics) {
         n.fx = undefined;
@@ -349,7 +348,6 @@ export default function GraphView({ data }: GraphViewProps) {
         />
       )}
 
-      {/* Layout Controls */}
       <div className="absolute top-4 right-4 flex items-center gap-2 z-10 bg-white/80 backdrop-blur-sm p-1 border border-black/10 shadow-sm">
         <button
           onClick={() => setPhysicsEnabled((v) => !v)}
@@ -373,7 +371,6 @@ export default function GraphView({ data }: GraphViewProps) {
         ))}
       </div>
 
-      {/* Zoom Controls */}
       <div className="absolute bottom-4 left-4 flex flex-col gap-2 z-10">
         {[
           { onClick: handleZoomIn, title: 'Zoom In', icon: <Plus className="w-4 h-4" /> },
@@ -391,7 +388,6 @@ export default function GraphView({ data }: GraphViewProps) {
         ))}
       </div>
 
-      {/* Context Menu */}
       {contextMenu?.show && (
         <div
           className="fixed z-50 bg-white border border-black shadow-[4px_4px_0_rgba(0,0,0,1)] flex flex-col min-w-[150px]"
@@ -415,7 +411,6 @@ export default function GraphView({ data }: GraphViewProps) {
         </div>
       )}
 
-      {/* Tooltip */}
       <div
         ref={tooltipRef}
         className="fixed z-50 pointer-events-none bg-white text-black p-3 border border-black shadow-[4px_4px_0_rgba(0,0,0,1)] transition-opacity duration-150"
@@ -435,7 +430,6 @@ export default function GraphView({ data }: GraphViewProps) {
         )}
       </div>
 
-      {/* Entity Detail Panel */}
       {selectedNode && (
         <div className="absolute top-4 right-4 bottom-4 w-96 bg-white border border-black shadow-[4px_4px_0_rgba(0,0,0,1)] flex flex-col z-20 overflow-hidden animate-in slide-in-from-right-8">
           <div className="p-4 border-b border-black/10 bg-[#f4f4f0] flex items-center justify-between flex-shrink-0">

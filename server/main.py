@@ -13,8 +13,6 @@ import sys
 import logging
 from pathlib import Path
 
-# Ensure the server directory is always on sys.path,
-# regardless of where Python is launched from (e.g. `python server/main.py`).
 _SERVER_DIR = Path(__file__).resolve().parent
 if str(_SERVER_DIR) not in sys.path:
     sys.path.insert(0, str(_SERVER_DIR))
@@ -70,7 +68,6 @@ app.add_middleware(
 
 MAX_UPLOAD_BYTES = 20 * 1024 * 1024  # 20 MB
 
-
 @app.get("/health")
 def health():
     return {
@@ -80,7 +77,6 @@ def health():
         "kb_ready": kb.kb_ready,
         "kb_triples": len(kb.triples),
     }
-
 
 @app.post("/extract", response_model=GraphData)
 @limiter.limit("10/minute")
@@ -92,7 +88,6 @@ def extract(request: Request, req: ExtractRequest):
     """
     _require_model()
     return build_graph(run_ner(req.text), req.text)
-
 
 @app.post("/upload-pdf")
 @limiter.limit("5/minute")
@@ -153,13 +148,11 @@ async def upload_pdf(request: Request, file: UploadFile = File(...)):
     except Exception as e:
         raise HTTPException(500, detail=f"PDF read error: {e}")
 
-
 @app.post("/predict-links", response_model=PredictLinksResponse)
 @limiter.limit("30/minute")
 def predict_links(request: Request, req: PredictLinksRequest):
     _require_model()
     return PredictLinksResponse(predicted_relations=predict_new_links(req.entities, req.relations))
-
 
 @app.post("/metrics", response_model=MetricsResponse)
 @limiter.limit("20/minute")
@@ -171,7 +164,6 @@ def metrics(request: Request, req: MetricsRequest):
         raise HTTPException(500, detail=str(e))
     except Exception as e:
         raise HTTPException(500, detail=f"Graph metrics error: {e}")
-
 
 @app.post("/insight", response_model=InsightResponse)
 @limiter.limit("20/minute")
@@ -187,12 +179,10 @@ def insight(request: Request, req: InsightRequest):
     except Exception as e:
         raise HTTPException(500, detail=f"Insight generation error: {e}")
 
-
 @app.get("/kb/stats")
 def kb_stats():
     """Knowledge base statistics."""
     return kb.get_stats()
-
 
 @app.get("/kb/search")
 @limiter.limit("30/minute")
@@ -204,7 +194,6 @@ def kb_search(request: Request, q: str, limit: int = 20):
         raise HTTPException(400, detail="Query must not be empty.")
     return {"query": q, "results": kb.search_entities(q, limit=limit)}
 
-
 @app.get("/kb/entity")
 def kb_entity(name: str, limit: int = 50):
     """Get triples related to an entity."""
@@ -212,7 +201,6 @@ def kb_entity(name: str, limit: int = 50):
         raise HTTPException(503, detail="Knowledge base is not ready.")
     triples = kb.get_entity_triples(name, limit=limit)
     return {"entity": name, "total": len(triples), "triples": triples}
-
 
 @app.post("/chat", response_model=ChatResponse)
 @limiter.limit("30/minute")
@@ -224,14 +212,12 @@ async def chat(request: Request, req: ChatRequest):
         logger.exception("Chat error")
         raise HTTPException(500, detail=f"Chat error: {e}")
 
-
 def _require_model():
     if not model_state.model_ready:
         raise HTTPException(
             503,
             detail=f"Model is not ready. {model_state.model_error or 'Loading...'}",
         )
-
 
 @app.on_event("startup")
 async def startup_event():
@@ -243,7 +229,6 @@ async def startup_event():
         loop.run_in_executor(None, load_kb),
         loop.run_in_executor(None, init_chat_db),
     )
-
 
 if __name__ == "__main__":
     import uvicorn

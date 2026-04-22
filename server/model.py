@@ -7,14 +7,12 @@ logger = logging.getLogger(__name__)
 
 MODEL_DIR = Path(__file__).parent.parent / "model" / "phobert-ner-final"
 
-# Biến global — được set bởi load_model(), dùng ở ner.py
 ner_model     = None
 ner_tokenizer = None
 id2label: dict[int, str] = {}   # {0: "O", 1: "B-DATE", ...}
 device        = None
 model_ready   = False
 model_error   = None
-
 
 def load_model() -> None:
     """Load RobertaForTokenClassification từ thư mục model/."""

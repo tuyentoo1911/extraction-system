@@ -40,7 +40,6 @@ export default function HighlightView({ data, inputText }: HighlightViewProps) {
         const end = start + match[0].length;
         const before = inputText[start - 1];
         const after = inputText[end];
-        // Chỉ highlight khi match đứng đúng biên từ, tránh match lạc vào giữa chữ.
         if (isWordChar(before) || isWordChar(after)) continue;
         const overlap = ranges.some((r) => !(end <= r.start || start >= r.end));
         if (!overlap) ranges.push({ start, end, type: ent.type });

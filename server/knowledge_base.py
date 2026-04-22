@@ -19,28 +19,21 @@ logger = logging.getLogger(__name__)
 
 KB_PATH = Path(__file__).parent.parent / "model" / "knowledge_graph_output" / "triples.json"
 
-# Ngưỡng ratio SequenceMatcher để chấp nhận fuzzy match
 FUZZY_THRESHOLD = 0.75
-# Ngưỡng recall token overlap (% token của query xuất hiện trong KB entity)
 TOKEN_OVERLAP_THRESHOLD = 0.6
 
-# ── State ──────────────────────────────────────────────────────────────────────
 triples: list[dict] = []          # toàn bộ triple dicts
 metadata: dict = {}
 
-# Index: tên entity (lowercase) → set các chỉ số triple
 _subject_index: dict[str, set[int]] = defaultdict(set)
 _object_index:  dict[str, set[int]] = defaultdict(set)
-# Index từng từ (cho fuzzy): word → set các chỉ số triple
 _word_index:    dict[str, set[int]] = defaultdict(set)
 _entity_type_scores: dict[str, dict[str, float]] = defaultdict(lambda: defaultdict(float))
 
-# Cache tên entity đầy đủ → để fuzzy compare nhanh hơn
 _all_subjects: list[str] = []
 _all_objects:  list[str] = []
 
 kb_ready = False
-
 
 def load_kb() -> None:
     """Load triples.json và build index."""
@@ -63,7 +56,6 @@ def load_kb() -> None:
             _entity_type_scores[subj][t["subject_type"]] += conf
             _entity_type_scores[obj][t["object_type"]] += conf
 
-            # Word-level index cho fuzzy matching
             for word in subj.split():
                 if len(word) > 1:
                     _word_index[word].add(i)
@@ -71,20 +63,16 @@ def load_kb() -> None:
                 if len(word) > 1:
                     _word_index[word].add(i)
 
-        # Build danh sách entity đầy đủ để SequenceMatcher
         _all_subjects = list(_subject_index.keys())
         _all_objects  = list(_object_index.keys())
 
         kb_ready = True
         logger.info(
-            f"✅ Knowledge base loaded: {len(triples)} triples, "
+            f" Knowledge base loaded: {len(triples)} triples, "
             f"{len(_subject_index)} subjects, {len(_object_index)} objects"
         )
     except Exception as e:
-        logger.error(f"❌ Knowledge base load failed: {e}", exc_info=True)
-
-
-# ── Lookup functions ───────────────────────────────────────────────────────────
+        logger.error(f" Knowledge base load failed: {e}", exc_info=True)
 
 def _best_triple(candidate_indices: set[int]) -> str | None:
     """Trả về nhãn quan hệ của triple có confidence cao nhất."""
@@ -92,7 +80,6 @@ def _best_triple(candidate_indices: set[int]) -> str | None:
         return None
     best = max(candidate_indices, key=lambda i: triples[i].get("confidence", 0))
     return triples[best]["relation"].replace("_", " ")
-
 
 def _fuzzy_match_entity(query: str, index: dict[str, set[int]]) -> tuple[str | None, float]:
     """
@@ -108,7 +95,6 @@ def _fuzzy_match_entity(query: str, index: dict[str, set[int]]) -> tuple[str | N
     q_lower = query.lower().strip()
     q_tokens = set(q_lower.split())
 
-    # ── Bước 1: Thu thập ứng viên qua word_index ─────────────────────────────
     candidate_keys: set[str] = set()
     for word in q_tokens:
         if len(word) > 1:
@@ -121,18 +107,14 @@ def _fuzzy_match_entity(query: str, index: dict[str, set[int]]) -> tuple[str | N
                 if obj_key in index:
                     candidate_keys.add(obj_key)
 
-    # Nếu không có ứng viên nào qua word_index, fallback toàn bộ index
-    # (chỉ xảy ra khi query gồm toàn stop-word ngắn)
     if not candidate_keys:
         candidate_keys = set(index.keys())
 
-    # ── Bước 2: SequenceMatcher trên ứng viên đã lọc ─────────────────────────
     best_key: str | None = None
     best_ratio: float = 0.0
 
     for candidate in candidate_keys:
         c_tokens = set(candidate.split())
-        # Token overlap nhanh — bỏ qua nếu quá khác biệt
         if q_tokens and c_tokens:
             overlap = len(q_tokens & c_tokens) / len(q_tokens)
             if overlap < TOKEN_OVERLAP_THRESHOLD and best_ratio >= FUZZY_THRESHOLD:
@@ -146,7 +128,6 @@ def _fuzzy_match_entity(query: str, index: dict[str, set[int]]) -> tuple[str | N
     if best_ratio >= FUZZY_THRESHOLD and best_key is not None:
         return best_key, best_ratio
     return None, 0.0
-
 
 def find_relation(subject: str, obj: str) -> str | None:
     """
@@ -163,16 +144,13 @@ def find_relation(subject: str, obj: str) -> str | None:
     subj_key = subject.lower().strip()
     obj_key  = obj.lower().strip()
 
-    # ── 1. Exact match ────────────────────────────────────────────────────────
     candidate_indices = _subject_index.get(subj_key, set()) & _object_index.get(obj_key, set())
     if not candidate_indices:
-        # Thử chiều ngược lại
         candidate_indices = _subject_index.get(obj_key, set()) & _object_index.get(subj_key, set())
 
     if candidate_indices:
         return _best_triple(candidate_indices)
 
-    # ── 2. Fuzzy subject + exact object ──────────────────────────────────────
     fuzzy_subj, _ = _fuzzy_match_entity(subj_key, _subject_index)
     if fuzzy_subj:
         candidate_indices = _subject_index.get(fuzzy_subj, set()) & _object_index.get(obj_key, set())
@@ -180,7 +158,6 @@ def find_relation(subject: str, obj: str) -> str | None:
             logger.debug("fuzzy match subject: '%s' → '%s'", subject, fuzzy_subj)
             return _best_triple(candidate_indices)
 
-    # ── 3. Exact subject + fuzzy object ──────────────────────────────────────
     fuzzy_obj, _ = _fuzzy_match_entity(obj_key, _object_index)
     if fuzzy_obj:
         candidate_indices = _subject_index.get(subj_key, set()) & _object_index.get(fuzzy_obj, set())
@@ -188,7 +165,6 @@ def find_relation(subject: str, obj: str) -> str | None:
             logger.debug("fuzzy match object: '%s' → '%s'", obj, fuzzy_obj)
             return _best_triple(candidate_indices)
 
-    # ── 4. Fuzzy cả hai ───────────────────────────────────────────────────────
     if fuzzy_subj and fuzzy_obj:
         candidate_indices = _subject_index.get(fuzzy_subj, set()) & _object_index.get(fuzzy_obj, set())
         if candidate_indices:
@@ -200,7 +176,6 @@ def find_relation(subject: str, obj: str) -> str | None:
 
     return None
 
-
 def search_entities(query: str, limit: int = 20) -> list[dict]:
     """
     Tìm kiếm entity trong KB theo tên (partial match).
@@ -210,12 +185,10 @@ def search_entities(query: str, limit: int = 20) -> list[dict]:
     if not q:
         return []
 
-    # Tìm theo exact + word index
     candidate_indices: set[int] = set()
     for word in q.split():
         candidate_indices |= _word_index.get(word, set())
 
-    # Tính điểm: entity nào xuất hiện trong query nhiều nhất
     entity_scores: dict[tuple, float] = defaultdict(float)
     for i in candidate_indices:
         t = triples[i]
@@ -226,7 +199,6 @@ def search_entities(query: str, limit: int = 20) -> list[dict]:
 
     sorted_entities = sorted(entity_scores.items(), key=lambda x: -x[1])
 
-    # Đếm số triple cho mỗi entity
     result = []
     seen: set[str] = set()
     for (name, etype), score in sorted_entities:
@@ -241,7 +213,6 @@ def search_entities(query: str, limit: int = 20) -> list[dict]:
 
     return result
 
-
 def get_entity_triples(entity_name: str, limit: int = 50) -> list[dict]:
     """
     Lấy tất cả triples liên quan đến một entity (subject hoặc object).
@@ -250,7 +221,6 @@ def get_entity_triples(entity_name: str, limit: int = 50) -> list[dict]:
     indices = _subject_index.get(key, set()) | _object_index.get(key, set())
     sorted_indices = sorted(indices, key=lambda i: -triples[i].get("confidence", 0))
     return [triples[i] for i in sorted_indices[:limit]]
-
 
 def get_entity_type(entity_name: str) -> str | None:
     """
@@ -262,7 +232,6 @@ def get_entity_type(entity_name: str) -> str | None:
     if not scores:
         return None
     return max(scores.items(), key=lambda x: x[1])[0]
-
 
 def enrich_relations(
     entities: list,   # list[Entity]
@@ -295,7 +264,6 @@ def enrich_relations(
                     return enriched
 
     return enriched
-
 
 def get_stats() -> dict:
     return {

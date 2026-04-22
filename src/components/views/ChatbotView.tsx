@@ -18,13 +18,13 @@ function getStoredSessionId(): string | null {
 function storeSessionId(id: string) {
   try {
     localStorage.setItem(SESSION_KEY, id);
-  } catch { /* noop */ }
+  } catch {  }
 }
 
 function clearStoredSession() {
   try {
     localStorage.removeItem(SESSION_KEY);
-  } catch { /* noop */ }
+  } catch {  }
 }
 
 interface ChatbotViewProps {
@@ -122,7 +122,6 @@ export default function ChatbotView({ data, inputText }: ChatbotViewProps) {
 
   return (
     <div className="flex flex-col h-full bg-white">
-      {/* Header bar */}
       <div className="flex items-center justify-between px-6 py-2 border-b border-black/10 bg-[#f4f4f0]">
         <div className="flex items-center gap-2">
           <span className="font-mono text-[10px] uppercase tracking-widest text-black/50">
@@ -139,7 +138,6 @@ export default function ChatbotView({ data, inputText }: ChatbotViewProps) {
         </button>
       </div>
 
-      {/* Messages */}
       <div className="flex-1 overflow-y-auto p-6 space-y-6">
         {messages.length === 0 && (
           <div className="flex flex-col items-center justify-center h-full text-black/40 font-mono text-sm text-center space-y-4">
@@ -149,7 +147,6 @@ export default function ChatbotView({ data, inputText }: ChatbotViewProps) {
               Bạn có thể hỏi về thực thể, quan hệ, so sánh, thống kê, tra cứu Knowledge Base và nhiều hơn nữa.
             </p>
 
-            {/* Suggestion chips */}
             <div className="flex flex-wrap justify-center gap-2 mt-4 max-w-lg">
               {suggestions.map((s) => (
                 <button
@@ -186,7 +183,6 @@ export default function ChatbotView({ data, inputText }: ChatbotViewProps) {
           </div>
         )}
 
-        {/* Follow-up suggestions after messages */}
         {messages.length > 0 && !isTyping && (
           <div className="flex flex-wrap gap-2 pt-2">
             {suggestions.slice(0, 4).map((s) => (
@@ -204,7 +200,6 @@ export default function ChatbotView({ data, inputText }: ChatbotViewProps) {
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Input */}
       <div className="p-4 border-t border-black/10 bg-[#f4f4f0]">
         <div className="flex gap-2">
           <input

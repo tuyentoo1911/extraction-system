@@ -145,16 +145,12 @@ NGÔN NGỮ
 - Viết tự nhiên, dễ hiểu, không dịch thuật cứng nhắc
 """
 
-
 def init_chat_db() -> None:
     """Called once at server startup."""
     try:
         mem.init_pool()
     except Exception:
         logger.warning("Chat memory DB not available — chat will still work without persistence.", exc_info=True)
-
-
-# ── Public entry point ───────────────────────────────────────────
 
 async def handle_chat(req: ChatRequest) -> ChatResponse:
     session_id = _safe_ensure_session(req.session_id)
@@ -163,9 +159,6 @@ async def handle_chat(req: ChatRequest) -> ChatResponse:
 
     history_rows = _safe_get_history(session_id)
 
-    # FIX 2: Build both context sources and combine them for the LLM.
-    # _build_graph_context provides structured graph data with hub/degree/hints.
-    # rag_mod.retrieve_context provides BM25-retrieved text/entity/KB chunks.
     graph_context = _build_graph_context(req.message, req.entities, req.relations)
     rag_context = rag_mod.retrieve_context(
         req.message, req.input_text, req.entities, req.relations,
@@ -198,11 +191,7 @@ async def handle_chat(req: ChatRequest) -> ChatResponse:
         history=turns,
     )
 
-
-# ── Memory helpers (graceful degradation) ────────────────────────
-
 _memory_available = True
-
 
 def _safe_ensure_session(session_id: Optional[str]) -> str:
     global _memory_available
@@ -215,7 +204,6 @@ def _safe_ensure_session(session_id: Optional[str]) -> str:
         _memory_available = False
         return session_id or "ephemeral"
 
-
 def _safe_add_message(session_id: str, role: str, content: str) -> None:
     if not _memory_available:
         return
@@ -223,7 +211,6 @@ def _safe_add_message(session_id: str, role: str, content: str) -> None:
         mem.add_message(session_id, role, content)
     except Exception:
         logger.warning("Failed to persist chat message.", exc_info=True)
-
 
 def _safe_get_history(session_id: str, limit: int = 50) -> list[dict]:
     if not _memory_available:
@@ -233,9 +220,6 @@ def _safe_get_history(session_id: str, limit: int = 50) -> list[dict]:
     except Exception:
         logger.warning("Failed to load chat history.", exc_info=True)
         return []
-
-
-# ── Graph context builder ────────────────────────────────────────
 
 def _build_graph_context(
     question: str,
@@ -255,7 +239,6 @@ def _build_graph_context(
     q_lower = question.lower()
     entity_map = {e.id: e for e in entities}
 
-    # ── Degree map (FIX 4 — ENTITY BOOST) ───────────────────────
     deg: dict[str, int] = defaultdict(int)
     for e in entities:
         deg[e.id] = 0
@@ -263,7 +246,6 @@ def _build_graph_context(
         deg[r.source] += 1
         deg[r.target] += 1
 
-    # Score = question relevance + alias bonus + hub boost (capped at +3)
     scored: list[tuple[Entity, float]] = []
     for e in entities:
         score = 0.0
@@ -295,7 +277,6 @@ def _build_graph_context(
         "",
     ]
 
-    # ── FIX 6: Top Hub Nodes ─────────────────────────────────────
     top_hubs = sorted(deg.items(), key=lambda x: x[1], reverse=True)[:5]
     if top_hubs:
         lines.append("### Top Hub Nodes (most connected):")
@@ -305,7 +286,6 @@ def _build_graph_context(
                 lines.append(f"  • {e.name} [{e.type}] — {d} connections")
         lines.append("")
 
-    # ── FIX 1 + FIX 4: Entities with degree & query mention tag ─
     predicted_rel_count = sum(1 for r in relevant_rels if r.isPredicted)
     lines.append(f"### Entities ({len(top_entities)}/{len(entities)}):")
     for e, _ in top_entities:
@@ -320,7 +300,6 @@ def _build_graph_context(
 
     lines.append("")
 
-    # ── FIX 1 + FIX 6: Relations with confidence tags ────────────
     lines.append(
         f"### Relations ({len(relevant_rels)}/{len(relations)}"
         f"{f', predicted={predicted_rel_count}' if predicted_rel_count else ''}):"
@@ -331,11 +310,9 @@ def _build_graph_context(
             f"  [{_ename(r.source)}] --({r.label})--> [{_ename(r.target)}]{conf_tag}"
         )
 
-    # ── FIX 6: Reasoning Hints ───────────────────────────────────
     lines.append("")
     lines.append("### Graph Insights (reasoning hints):")
 
-    # Hub node insight
     if top_hubs and top_hubs[0][0] in entity_map:
         hub_e = entity_map[top_hubs[0][0]]
         hub_d = top_hubs[0][1]
@@ -344,7 +321,6 @@ def _build_graph_context(
             f"— likely the most important entity in this graph."
         )
 
-    # Query-mentioned entity connectivity insight
     query_entities = [e for e in entities if e.name.lower() in q_lower]
     for qe in query_entities[:2]:
         qe_deg = deg.get(qe.id, 0)
@@ -353,7 +329,6 @@ def _build_graph_context(
         else:
             lines.append(f"  • '{qe.name}' has {qe_deg} connection(s) in this graph.")
 
-    # 2-hop common neighbor hint
     if len(query_entities) >= 2:
         ea_neighbors = {
             r.target if r.source == query_entities[0].id else r.source
@@ -375,13 +350,11 @@ def _build_graph_context(
                 f"share common neighbor(s): {common_names} — useful for 2-hop reasoning."
             )
 
-    # Dominant entity type
     type_counts = Counter(e.type for e in entities)
     if type_counts:
         dom_type, dom_cnt = type_counts.most_common(1)[0]
         lines.append(f"  • Dominant entity type: {dom_type} ({dom_cnt}/{len(entities)} nodes).")
 
-    # Predicted relations warning
     if predicted_rel_count:
         lines.append(
             f"  • {predicted_rel_count} relation(s) are PREDICTED (not extracted from source text) "
@@ -391,17 +364,11 @@ def _build_graph_context(
     lines.append("═══════════════════════════════════════")
     return "\n".join(lines)
 
-
-# ── LLM call ─────────────────────────────────────────────────────
-
 async def _call_llm(
     history: list[dict],
     graph_context: str,
     rag_context: str = "",
 ) -> str:
-    # FIX 2: Combine system prompt + structured graph context + RAG-retrieved chunks.
-    # Graph context (structured, degree-aware) comes first as it is the primary source.
-    # RAG context (BM25 text/entity/KB chunks) follows as supplementary evidence.
     system = _SYSTEM_PROMPT + "\n\n" + graph_context
     if rag_context and rag_context.strip() not in {"(No relevant context found.)", ""}:
         system += "\n\n" + rag_context
@@ -412,11 +379,6 @@ async def _call_llm(
 
     return await llm_client.generate(system, msgs)
 
-
-# ═════════════════════════════════════════════════════════════════
-# §  RULE-BASED ENGINE  (expanded — 15+ intent types)
-# ═════════════════════════════════════════════════════════════════
-
 _FUZZY_THRESHOLD = 0.50
 
 _VIET_DIACRITICS = str.maketrans(
@@ -426,10 +388,8 @@ _VIET_DIACRITICS = str.maketrans(
     "AAAAAAAAAAAAAAAAAEEEEEEEEEEEIIIIIOOOOOOOOOOOOOOOOOUUUUUUUUUUUYYYYYD",
 )
 
-
 def _strip_diacritics(s: str) -> str:
     return s.translate(_VIET_DIACRITICS)
-
 
 def _fuzzy_find_entity(
     query: str, entities: list[Entity],
@@ -462,7 +422,6 @@ def _fuzzy_find_entity(
             best, best_ratio = e, ratio
     return best if best_ratio >= _FUZZY_THRESHOLD else None
 
-
 def _fuzzy_find_entities_multi(
     query: str, entities: list[Entity],
 ) -> list[Entity]:
@@ -474,11 +433,9 @@ def _fuzzy_find_entities_multi(
             found.append(e)
     return found
 
-
 def _name(eid: str, entity_map: dict[str, Entity]) -> str:
     ent = entity_map.get(eid)
     return ent.name if ent else eid
-
 
 def _degree_map(entities: list[Entity], relations: list[Relation]) -> dict[str, int]:
     deg: dict[str, int] = defaultdict(int)
@@ -489,10 +446,8 @@ def _degree_map(entities: list[Entity], relations: list[Relation]) -> dict[str, 
         deg[r.target] += 1
     return deg
 
-
 def _entity_rels(eid: str, relations: list[Relation]) -> list[Relation]:
     return [r for r in relations if r.source == eid or r.target == eid]
-
 
 def _format_entity_card(
     e: Entity, relations: list[Relation], entity_map: dict[str, Entity],
@@ -519,7 +474,6 @@ def _format_entity_card(
         f"**Quan hệ ({len(rels)}):**\n{rel_text}"
     )
 
-
 def _rule_based_reply(
     user_message: str,
     entities: list[Entity],
@@ -535,7 +489,6 @@ def _rule_based_reply(
             "Vui lòng nhập văn bản và nhấn **Trích xuất** trước khi hỏi đáp."
         )
 
-    # ── 1. Greeting ──────────────────────────────────────────────
     greetings = {"xin chào", "chào", "hello", "hi", "hey", "xin chao"}
     if q in greetings or any(q.startswith(g) for g in greetings):
         top3 = sorted(entities, key=lambda e: len(_entity_rels(e.id, relations)), reverse=True)[:3]
@@ -550,7 +503,6 @@ def _rule_based_reply(
             '- "Tóm tắt đồ thị"'
         )
 
-    # ── 2a. KB lookup (before help, so "KB biết gì" isn't caught by help_kw) ──
     kb_patterns = [
         r"(?:kb|knowledge\s*base)\s+(?:biết gì|nói gì|cho biết|search|lookup|tra cứu)\s+(?:về\s+)?(.+?)(?:\?|$)",
         r"(?:tra cứu|tìm|search)\s+(?:trong\s+)?(?:kb|knowledge\s*base|cơ sở tri thức)\s+(.+?)(?:\?|$)",
@@ -561,7 +513,6 @@ def _rule_based_reply(
         if m:
             return _intent_kb_lookup(m.group(1).strip())
 
-    # ── 2. Help / capabilities ───────────────────────────────────
     help_kw = {"help", "giúp", "hướng dẫn", "trợ giúp", "hỏi gì", "hỏi được gì",
                "biết gì", "làm gì", "chức năng", "capability", "what can"}
     if any(kw in q for kw in help_kw):
@@ -583,13 +534,11 @@ def _rule_based_reply(
             '| Trích đoạn văn bản gốc | "Văn bản gốc nói gì về X?" |\n'
         )
 
-    # ── 3. Graph summary / overview ──────────────────────────────
     summary_kw = {"tóm tắt", "tổng quan", "overview", "summary", "summar",
                   "mô tả đồ thị", "describe graph", "describe the graph"}
     if any(kw in q for kw in summary_kw):
         return _intent_summary(entities, relations)
 
-    # ── 4. Relationship path between two entities ────────────────
     _question_words = {"gì", "ai", "đâu", "nào", "sao", "những gì", "cái gì", "thế nào", "như thế nào"}
     path_patterns = [
         r"(?:mối\s+)?quan\s+hệ\s+(?:giữa|của)\s+(.+?)\s+và\s+(.+?)(?:\?|$)",
@@ -606,7 +555,6 @@ def _rule_based_reply(
                 break
             return _intent_path(a, b, entities, relations, entity_map)
 
-    # ── 5. Compare two entities ──────────────────────────────────
     compare_patterns = [
         r"so\s+sánh\s+(.+?)\s+và\s+(.+?)(?:\?|$)",
         r"compare\s+(.+?)\s+(?:and|with|vs\.?)\s+(.+?)(?:\?|$)",
@@ -617,7 +565,6 @@ def _rule_based_reply(
         if m:
             return _intent_compare(m.group(1).strip(), m.group(2).strip(), entities, relations, entity_map)
 
-    # ── 6. Neighbors / connections of entity ─────────────────────
     neighbor_triggers = [
         "kết nối với", "liên quan với", "liên quan đến", "liên quan tới",
         "kết nối gì", "liên quan gì", "quan hệ gì", "quan hệ với",
@@ -629,7 +576,6 @@ def _rule_based_reply(
         for e in sorted(entities, key=lambda x: len(x.name), reverse=True):
             if e.name.lower() in q:
                 return _intent_neighbors(e.name, entities, relations, entity_map)
-        # regex: extract the noun before/after the trigger
         neighbor_patterns = [
             r"(?:các\s+)?(?:kết nối|liên quan|quan hệ)\s+(?:của\s+)?(.+?)(?:\?|$)",
             r"(.+?)\s+(?:kết nối|liên quan|quan hệ)\s+(?:với\s+)?(?:gì|những gì|ai|cái gì|đâu)",
@@ -644,7 +590,6 @@ def _rule_based_reply(
                 if entity:
                     return _intent_neighbors(entity.name, entities, relations, entity_map)
 
-    # ── 7. Top / most important / most connected ─────────────────
     top_kw = {"quan trọng nhất", "nổi bật nhất", "top", "most important",
               "most connected", "nhiều kết nối nhất", "node chính",
               "thực thể chính", "hub", "trung tâm"}
@@ -655,12 +600,10 @@ def _rule_based_reply(
             n = min(int(m.group(1)), 20)
         return _intent_top_nodes(n, entities, relations, entity_map)
 
-    # ── 8. Predicted relations ───────────────────────────────────
     predict_kw = {"dự đoán", "predicted", "predict", "dự báo", "gợi ý quan hệ"}
     if any(kw in q for kw in predict_kw):
         return _intent_predicted(relations, entity_map)
 
-    # ── 9. Relation type filtering ───────────────────────────────
     rel_filter_patterns = [
         r"(?:quan hệ|relation|liên kết)\s+(?:loại\s+)?(.+?)(?:\?|$)",
         r"(?:những\s+)?(?:ai|gì)\s+(đầu tư|hợp tác|làm việc|sáng lập|cung cấp|cạnh tranh|thành lập)",
@@ -674,21 +617,16 @@ def _rule_based_reply(
             if result:
                 return result
 
-    # ── 10. (KB lookup handled above in §2a) ────────────────────
-
-    # ── 11. Source text excerpt ───────────────────────────────────
     src_kw = {"văn bản gốc", "source text", "nguyên văn", "trích đoạn",
               "original text", "input text", "text gốc", "đoạn văn"}
     if any(kw in q for kw in src_kw):
         return _intent_source_text(q, input_text, entities)
 
-    # ── 12. Count / statistics ───────────────────────────────────
     count_kw = {"bao nhiêu", "how many", "count", "total", "tổng",
                 "đếm", "số lượng", "thống kê", "statistics", "stats"}
     if any(kw in q for kw in count_kw):
         return _intent_count(q, entities, relations)
 
-    # ── 13. Type listing ─────────────────────────────────────────
     type_keywords: dict[str, list[str]] = {
         "Person":       ["person", "người", "nhân vật", "ai", "who"],
         "Organization": ["organization", "company", "tổ chức", "công ty", "doanh nghiệp"],
@@ -706,20 +644,17 @@ def _rule_based_reply(
             if match:
                 return match
 
-    # ── 14. Relation listing (general) ───────────────────────────
     rel_kw = {"relation", "link", "quan hệ", "liên kết", "kết nối",
               "mối quan hệ", "edge", "connection", "cạnh"}
     if any(kw in q for kw in rel_kw):
         return _intent_relations_list(relations, entity_map)
 
-    # ── 15. Entity lookup (fuzzy — catch-all) ────────────────────
     matched = _fuzzy_find_entity(q, entities)
     if matched:
         card = _format_entity_card(matched, relations, entity_map)
         kb_extra = _kb_enrich_entity(matched.name)
         return card + kb_extra
 
-    # ── 16. Multi-entity mention ─────────────────────────────────
     multi = _fuzzy_find_entities_multi(q, entities)
     if len(multi) >= 2:
         parts = []
@@ -731,20 +666,13 @@ def _rule_based_reply(
         kb_extra = _kb_enrich_entity(multi[0].name)
         return card + kb_extra
 
-    # ── 17. RAG-enhanced fallback ────────────────────────────────
     rag_docs = rag_mod.retrieve_for_rule_based(
         user_message, input_text, entities, relations, top_k=5,
     )
     if rag_docs:
         return _intent_rag_fallback(user_message, rag_docs, entities, relations, entity_map)
 
-    # ── 18. Final fallback ────────────────────────────────────────
     return _intent_smart_fallback(q, entities, relations, entity_map)
-
-
-# ═════════════════════════════════════════════════════════════════
-# §  INTENT IMPLEMENTATIONS
-# ═════════════════════════════════════════════════════════════════
 
 def _intent_summary(entities: list[Entity], relations: list[Relation]) -> str:
     type_counts = Counter(e.type for e in entities)
@@ -775,7 +703,6 @@ def _intent_summary(entities: list[Entity], relations: list[Relation]) -> str:
         f"### Thực thể trung tâm\n{top3_text}"
     )
 
-
 def _intent_path(
     name_a: str, name_b: str,
     entities: list[Entity], relations: list[Relation],
@@ -801,7 +728,6 @@ def _intent_path(
             + "\n".join(direct)
         )
 
-    # 2-hop path
     a_neighbors = {r.target if r.source == ea.id else r.source: r for r in relations if r.source == ea.id or r.target == ea.id}
     b_neighbors = {r.target if r.source == eb.id else r.source: r for r in relations if r.source == eb.id or r.target == eb.id}
     common = set(a_neighbors.keys()) & set(b_neighbors.keys())
@@ -831,7 +757,6 @@ def _intent_path(
         f"Không tìm thấy quan hệ trực tiếp hoặc gián tiếp giữa "
         f"**{ea.name}** và **{eb.name}** trong đồ thị hiện tại."
     )
-
 
 def _intent_compare(
     name_a: str, name_b: str,
@@ -870,7 +795,6 @@ def _intent_compare(
         f"**Thực thể chung ({len(common)}):** {common_text}"
     )
 
-
 def _intent_neighbors(
     name: str,
     entities: list[Entity], relations: list[Relation],
@@ -899,7 +823,6 @@ def _intent_neighbors(
 
     return "\n".join(lines)
 
-
 def _intent_top_nodes(
     n: int,
     entities: list[Entity], relations: list[Relation],
@@ -916,7 +839,6 @@ def _intent_top_nodes(
         f"| # | Tên | Loại | Số kết nối |\n|---|---|---|---|\n{rows}"
     )
 
-
 def _intent_predicted(relations: list[Relation], entity_map: dict[str, Entity]) -> str:
     predicted = [r for r in relations if r.isPredicted]
     if not predicted:
@@ -930,7 +852,6 @@ def _intent_predicted(relations: list[Relation], entity_map: dict[str, Entity]) 
         f"## Quan hệ dự đoán ({len(predicted)})\n\n{rows}"
         + (f"\n\n_... và {len(predicted) - 15} quan hệ khác._" if len(predicted) > 15 else "")
     )
-
 
 def _intent_relation_filter(
     label_query: str,
@@ -959,7 +880,6 @@ def _intent_relation_filter(
 
     return "\n".join(lines)
 
-
 def _intent_kb_lookup(query: str) -> str:
     if not kb.kb_ready:
         return "Knowledge Base chưa sẵn sàng."
@@ -987,7 +907,6 @@ def _intent_kb_lookup(query: str) -> str:
         )
     return "\n".join(lines)
 
-
 def _intent_source_text(
     q: str, input_text: str, entities: list[Entity],
 ) -> str:
@@ -1012,7 +931,6 @@ def _intent_source_text(
         preview += "..."
     return f"## Văn bản gốc (trích)\n\n> {preview}"
 
-
 def _intent_count(
     q: str, entities: list[Entity], relations: list[Relation],
 ) -> str:
@@ -1033,7 +951,6 @@ def _intent_count(
         f"### Theo loại quan hệ\n"
         f"| Nhãn | Số lượng |\n|---|---|\n{rel_table}"
     )
-
 
 def _intent_type_listing(
     etype: str, q: str,
@@ -1059,7 +976,6 @@ def _intent_type_listing(
         + (f"\n\n_... và {len(filtered) - 20} thực thể khác._" if len(filtered) > 20 else "")
     )
 
-
 def _intent_relations_list(
     relations: list[Relation],
     entity_map: dict[str, Entity],
@@ -1082,7 +998,6 @@ def _intent_relations_list(
 
     return "\n".join(lines)
 
-
 def _kb_enrich_entity(name: str) -> str:
     """Append KB triples if available."""
     if not kb.kb_ready:
@@ -1094,7 +1009,6 @@ def _kb_enrich_entity(name: str) -> str:
     for t in triples:
         lines.append(f"- **{t['subject']}** → *{t['relation']}* → **{t['object']}**")
     return "\n".join(lines)
-
 
 def _intent_rag_fallback(
     question: str,
@@ -1113,13 +1027,13 @@ def _intent_rag_fallback(
     kb_docs = [d for d in docs if d.source == "kb_triple"]
 
     if text_chunks:
-        lines.append("📄 **Đoạn văn bản liên quan:**")
+        lines.append(" **Đoạn văn bản liên quan:**")
         for d in text_chunks[:3]:
             lines.append(f"> {d.text[:300]}")
         lines.append("")
 
     if entity_docs:
-        lines.append("🔍 **Thực thể liên quan:**")
+        lines.append(" **Thực thể liên quan:**")
         for d in entity_docs[:3]:
             name = d.metadata.get("entity_name", "?")
             etype = d.metadata.get("entity_type", "")
@@ -1127,13 +1041,13 @@ def _intent_rag_fallback(
         lines.append("")
 
     if rel_docs:
-        lines.append("🔗 **Quan hệ liên quan:**")
+        lines.append(" **Quan hệ liên quan:**")
         for d in rel_docs[:4]:
             lines.append(f"- {d.text}")
         lines.append("")
 
     if kb_docs:
-        lines.append("📚 **Từ Knowledge Base:**")
+        lines.append(" **Từ Knowledge Base:**")
         for d in kb_docs[:3]:
             lines.append(f"- {d.text}")
         lines.append("")
@@ -1143,7 +1057,6 @@ def _intent_rag_fallback(
 
     lines.append(" _Hãy hỏi cụ thể hơn để tôi trả lời chính xác hơn._")
     return "\n".join(lines)
-
 
 def _intent_smart_fallback(
     q: str,

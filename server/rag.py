@@ -25,15 +25,10 @@ from schemas import Entity, Relation
 
 logger = logging.getLogger(__name__)
 
-# ── Configuration ────────────────────────────────────────────────
-
 CHUNK_SIZE = 300
 CHUNK_OVERLAP = 80
 TOP_K = 12
 MAX_CONTEXT_CHARS = 3000
-
-
-# ── Data structures ──────────────────────────────────────────────
 
 @dataclass
 class Document:
@@ -42,7 +37,6 @@ class Document:
     source: str          # "input_text" | "entity" | "kb_triple" | "relation"
     metadata: dict = field(default_factory=dict)
 
-
 @dataclass
 class RAGIndex:
     """BM25 index over a list of Documents."""
@@ -50,20 +44,12 @@ class RAGIndex:
     bm25: BM25Okapi
     content_hash: str
 
-
 _cached_index: Optional[RAGIndex] = None
-
-
-# ── Tokenizer (Vietnamese-aware word split) ──────────────────────
 
 _VIET_WORD_RE = re.compile(r"[\w\u00C0-\u024F\u1EA0-\u1EF9\u0110\u0111]+", re.UNICODE)
 
-
 def _tokenize(text: str) -> list[str]:
     return [w.lower() for w in _VIET_WORD_RE.findall(text) if len(w) > 1]
-
-
-# ── Chunking ─────────────────────────────────────────────────────
 
 def _chunk_text(text: str, chunk_size: int = CHUNK_SIZE, overlap: int = CHUNK_OVERLAP) -> list[str]:
     """Split text into overlapping character windows, breaking on sentence boundaries."""
@@ -87,16 +73,12 @@ def _chunk_text(text: str, chunk_size: int = CHUNK_SIZE, overlap: int = CHUNK_OV
 
     return chunks
 
-
-# ── Document builders ────────────────────────────────────────────
-
 def _build_text_docs(input_text: str) -> list[Document]:
     chunks = _chunk_text(input_text)
     return [
         Document(text=c, source="input_text", metadata={"chunk_idx": i})
         for i, c in enumerate(chunks)
     ]
-
 
 def _build_entity_docs(
     entities: list[Entity],
@@ -133,7 +115,6 @@ def _build_entity_docs(
 
     return docs
 
-
 def _build_relation_docs(
     relations: list[Relation],
     entity_map: dict[str, Entity],
@@ -153,7 +134,6 @@ def _build_relation_docs(
             metadata={"label": r.label, "source": sname, "target": tname},
         ))
     return docs
-
 
 def _build_kb_docs(entity_names: list[str], max_per_entity: int = 5) -> list[Document]:
     """Fetch KB triples for mentioned entities."""
@@ -181,9 +161,6 @@ def _build_kb_docs(entity_names: list[str], max_per_entity: int = 5) -> list[Doc
 
     return docs
 
-
-# ── Index building ───────────────────────────────────────────────
-
 def _content_hash(input_text: str, entities: list[Entity], relations: list[Relation]) -> str:
     h = hashlib.md5()
     h.update(input_text.encode("utf-8", errors="ignore"))
@@ -192,7 +169,6 @@ def _content_hash(input_text: str, entities: list[Entity], relations: list[Relat
     if entities:
         h.update(entities[0].id.encode())
     return h.hexdigest()[:12]
-
 
 def build_index(
     input_text: str,
@@ -234,9 +210,6 @@ def build_index(
     )
     return idx
 
-
-# ── Retrieval ────────────────────────────────────────────────────
-
 def retrieve(
     query: str,
     index: RAGIndex,
@@ -256,7 +229,6 @@ def retrieve(
 
     scored_docs.sort(key=lambda x: x[0], reverse=True)
     return [d for _, d in scored_docs[:top_k] if _ > 0]
-
 
 def retrieve_context(
     query: str,
@@ -314,7 +286,6 @@ def retrieve_context(
         lines.append("")
 
     return "\n".join(lines)
-
 
 def retrieve_for_rule_based(
     query: str,

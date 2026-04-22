@@ -14,12 +14,8 @@ from schemas import GraphData
 
 logger = logging.getLogger(__name__)
 
-# Số node nguồn tối đa cho betweenness sampling
-# Graph ≤ ngưỡng này → tính chính xác (k=None); lớn hơn → sampling k node
 BETWEENNESS_K_SAMPLES   = 100
-# Ngưỡng node "large graph" — log warning khi vượt
 LARGE_GRAPH_NODE_WARN   = 500
-
 
 def compute_graph_metrics(data: GraphData) -> dict:
     """
@@ -64,12 +60,9 @@ def compute_graph_metrics(data: GraphData) -> dict:
             "top_betweenness": [],
         }
 
-    # ── Xác định k cho betweenness sampling ───────────────────────────────────
     if node_count <= BETWEENNESS_K_SAMPLES:
-        # Graph nhỏ: tính chính xác
         betweenness_k = None
     else:
-        # Graph lớn: dùng k-sampling
         betweenness_k = min(node_count, BETWEENNESS_K_SAMPLES)
         if node_count >= LARGE_GRAPH_NODE_WARN:
             logger.warning(
@@ -83,7 +76,6 @@ def compute_graph_metrics(data: GraphData) -> dict:
 
     degree_cent = nx.degree_centrality(ug)
 
-    # ── Betweenness với k-sampling ─────────────────────────────────────────────
     betweenness = nx.betweenness_centrality(
         ug,
         normalized=True,

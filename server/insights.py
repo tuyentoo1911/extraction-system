@@ -23,7 +23,6 @@ GENERIC_TERMS = {
 
 FOCUS_ENTITY_TYPES = ("Organization", "Product", "Person", "Location", "Event")
 
-
 def _build_graph(data: GraphData):
     try:
         import networkx as nx
@@ -44,7 +43,6 @@ def _build_graph(data: GraphData):
             )
     return nx, graph
 
-
 def _normalize(values: dict[str, float]) -> dict[str, float]:
     if not values:
         return {}
@@ -57,7 +55,6 @@ def _normalize(values: dict[str, float]) -> dict[str, float]:
         for key, value in values.items()
     }
 
-
 def _flow_pattern(in_degree: int, out_degree: int) -> str:
     ratio = (out_degree + 1.0) / (in_degree + 1.0)
     if ratio >= 3.0:
@@ -65,7 +62,6 @@ def _flow_pattern(in_degree: int, out_degree: int) -> str:
     if ratio <= 1 / 3:
         return "collector"
     return "balanced"
-
 
 def _is_noise_like(name: str, entity_type: str) -> bool:
     text = (name or "").strip().lower()
@@ -79,10 +75,8 @@ def _is_noise_like(name: str, entity_type: str) -> bool:
         return True
     return False
 
-
 def _top_records(rows: list[dict[str, Any]], sort_key: str, limit: int, reverse: bool = True) -> list[dict[str, Any]]:
     return sorted(rows, key=lambda row: row.get(sort_key, 0), reverse=reverse)[:limit]
-
 
 def _format_table(title: str, rows: list[dict[str, Any]], columns: list[str]) -> list[str]:
     lines = [f"## {title}"]
@@ -103,14 +97,12 @@ def _format_table(title: str, rows: list[dict[str, Any]], columns: list[str]) ->
     lines.append("")
     return lines
 
-
 def _influence_band(score: float) -> str:
     if score >= 0.75:
         return "High Influence"
     if score >= 0.45:
         return "Medium Influence"
     return "Emerging Influence"
-
 
 def _pick_focus_entity(rows: list[dict[str, Any]]) -> dict[str, Any] | None:
     if not rows:
@@ -120,7 +112,6 @@ def _pick_focus_entity(rows: list[dict[str, Any]]) -> dict[str, Any] | None:
             if row["entity_type"] == entity_type:
                 return row
     return rows[0]
-
 
 def _focus_neighbors(graph, node_id: str, limit: int = 8) -> list[dict[str, str]]:
     neighbors: list[dict[str, str]] = []
@@ -151,7 +142,6 @@ def _focus_neighbors(graph, node_id: str, limit: int = 8) -> list[dict[str, str]
     neighbors.sort(key=lambda item: (item["entity_type"], item["node"], item["label"]))
     return neighbors[:limit]
 
-
 def _summarize_neighbor_types(neighbors: list[dict[str, str]]) -> str:
     if not neighbors:
         return "chưa có quan hệ trực tiếp đủ rõ để mô tả"
@@ -161,7 +151,6 @@ def _summarize_neighbor_types(neighbors: list[dict[str, str]]) -> str:
         type_counts[key] = type_counts.get(key, 0) + 1
     ranked = sorted(type_counts.items(), key=lambda pair: (-pair[1], pair[0]))
     return ", ".join(f"{entity_type} ({count})" for entity_type, count in ranked[:4])
-
 
 def _render_focus_report(
     overview: dict[str, Any],
@@ -287,7 +276,6 @@ def _render_focus_report(
         )
     return lines
 
-
 async def _generate_llm_narrative(data: GraphData, input_text: str, overview: dict, top_influence: list, top_brokers: list, entity_type_summary: list) -> list[str]:
     if not LLM_AVAILABLE or not is_configured():
         return []
@@ -325,7 +313,6 @@ Provide 3-5 key insights in Vietnamese.
         print(f"LLM narrative failed: {e}")
         return []
 
-
 async def compute_insight_report(data: GraphData, input_text: str = "") -> dict[str, Any]:
     nx, graph = _build_graph(data)
     node_count = graph.number_of_nodes()
@@ -353,10 +340,8 @@ async def compute_insight_report(data: GraphData, input_text: str = "") -> dict[
         }
         return {"insight_markdown": "# Automatic Insights Report\n\nĐồ thị chưa có dữ liệu để phân tích insight.\n", "report": report}
 
-    # Use undirected graph for centrality calculations to match metrics.py
     ug = graph.to_undirected()
 
-    # Determine k for betweenness sampling (same as metrics.py)
     BETWEENNESS_K_SAMPLES = 100
     LARGE_GRAPH_NODE_WARN = 500
     if node_count <= BETWEENNESS_K_SAMPLES:
@@ -467,7 +452,6 @@ async def compute_insight_report(data: GraphData, input_text: str = "") -> dict[
     if entity_type_summary:
         narrative.append(f"Nhóm loại thực thể nổi bật nhất theo influence trung bình hiện là {entity_type_summary[0]['entity_type']}.")
 
-    # Try LLM narrative if available
     llm_narrative = await _generate_llm_narrative(data, input_text, overview, top_influence, top_brokers, entity_type_summary)
     if llm_narrative:
         narrative = llm_narrative

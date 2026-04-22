@@ -1,4 +1,3 @@
-# Ánh xạ nhãn NER → loại entity trong đồ thị.
 TYPE_MAP: dict[str, str | None] = {
     "PERSON":       "Person",
     "ORGANIZATION": "Organization",

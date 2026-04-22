@@ -12,16 +12,13 @@ export default function App() {
 
   return (
     <div className="min-h-screen flex flex-col relative overflow-hidden">
-      {/* Header */}
       <header className="w-full border-b border-black/10 bg-[#f4f4f0]/80 backdrop-blur-sm sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
-          {/* Logo */}
           <div className="flex items-center gap-2 font-mono text-sm font-bold tracking-widest">
             <CircleDot className="w-5 h-5" />
             <span>KGE.SYS</span>
           </div>
 
-          {/* Desktop Nav */}
           <nav className="hidden md:flex items-center gap-8 font-mono text-xs tracking-widest text-black/60 uppercase">
             <a href="#" className="hover:text-black transition-colors">Nền tảng</a>
             <a href="#" className="hover:text-black transition-colors">Giải pháp</a>
@@ -29,7 +26,6 @@ export default function App() {
             <a href="#" className="hover:text-black transition-colors">Công ty</a>
           </nav>
 
-          {/* Actions */}
           <div className="flex items-center gap-6 font-mono text-xs tracking-widest uppercase">
             <button className="text-black/60 hover:text-black transition-colors">
               <Search className="w-4 h-4" />
@@ -42,10 +38,8 @@ export default function App() {
         </div>
       </header>
 
-      {/* Main Content */}
       <main className="flex-1 flex flex-col items-center justify-center py-8 md:py-12 px-4 relative z-10">
         
-        {/* Top Heading */}
         <motion.h1 
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -55,13 +49,10 @@ export default function App() {
           Trích Xuất Dữ Liệu.
         </motion.h1>
 
-        {/* Diagram */}
         <div className="relative w-full max-w-4xl mx-auto my-4 md:my-6 overflow-x-auto pb-4">
           <div className="min-w-[600px] flex items-center justify-between relative px-4">
-            {/* Connecting Lines (SVG) */}
             <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
               <svg className="w-full h-full absolute" style={{ zIndex: -1 }}>
-                {/* Left lines */}
                 <motion.line 
                   initial={{ pathLength: 0, opacity: 0 }}
                   animate={{ pathLength: 1, opacity: 1 }}
@@ -81,7 +72,6 @@ export default function App() {
                   x1="50%" y1="50%" x2="20%" y2="80%" stroke="currentColor" strokeWidth="1" className="text-black/20" 
                 />
                 
-                {/* Right lines */}
                 <motion.line 
                   initial={{ pathLength: 0, opacity: 0 }}
                   animate={{ pathLength: 1, opacity: 1 }}
@@ -103,14 +93,12 @@ export default function App() {
               </svg>
             </div>
 
-            {/* Left Nodes */}
             <div className="flex flex-col gap-4 md:gap-6 z-10">
               <Node label="Người" delay={0.2} />
               <Node label="Tổ chức" delay={0.4} />
               <Node label="Địa điểm" delay={0.6} />
             </div>
 
-            {/* Center Hub */}
             <motion.div 
               initial={{ scale: 0, rotate: -180 }}
               animate={{ scale: 1, rotate: 360 }}
@@ -121,11 +109,9 @@ export default function App() {
               className="w-14 h-14 md:w-16 md:h-16 bg-[#e5e5e0] border border-black/10 flex items-center justify-center relative z-10 shrink-0 mx-8"
             >
               <Asterisk className="w-6 h-6 md:w-8 md:h-8 text-black/60" />
-              {/* Red dot indicator */}
               <div className="absolute -left-1 top-1/2 -translate-y-1/2 w-2 h-2 md:w-2.5 md:h-2.5 bg-[#f25f22] rounded-full" />
             </motion.div>
 
-            {/* Right Nodes */}
             <div className="flex flex-col gap-4 md:gap-6 z-10">
               <Node label="Sản phẩm" delay={0.3} />
               <Node label="Sự kiện" delay={0.5} />
@@ -134,7 +120,6 @@ export default function App() {
           </div>
         </div>
 
-        {/* Bottom Heading */}
         <motion.h2 
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -144,7 +129,6 @@ export default function App() {
           Kiến Tạo Tri Thức.
         </motion.h2>
 
-        {/* Subtext */}
         <motion.p 
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
@@ -155,7 +139,6 @@ export default function App() {
           xác định mối quan hệ và xây dựng đồ thị tri thức tự động với độ chính xác cao.
         </motion.p>
 
-        {/* Main CTA */}
         <motion.div 
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -171,7 +154,6 @@ export default function App() {
           </div>
         </motion.div>
 
-        {/* Scroll Indicator */}
         <motion.div
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
@@ -192,10 +174,8 @@ export default function App() {
 
       </main>
 
-      {/* Overview Section */}
       <section id="overview" className="w-full max-w-7xl mx-auto px-6 py-12 md:py-16 border-t border-black/10 relative z-10">
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 md:gap-12">
-          {/* Left: Title */}
           <div className="lg:col-span-4">
             <div className="sticky top-24">
               <h3 className="font-mono text-sm tracking-widest uppercase text-black/50 mb-4 flex items-center gap-2">
@@ -214,7 +194,6 @@ export default function App() {
             </div>
           </div>
 
-          {/* Right: Features Grid */}
           <div className="lg:col-span-8 grid grid-cols-1 sm:grid-cols-2 gap-4 md:gap-6">
             <FeatureCard 
               number="01"

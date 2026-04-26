@@ -36,8 +36,8 @@ ALLOWED_RELATIONS: frozenset[str] = frozenset({
     "founded", "headquartered_in", "has_office", "partnered_with",
     "competitor_of", "former_employee", "launched_at", "developed_by",
     "operates_in",
-    "established_in",   # Organization/Product → Date  (thành lập năm X, ra mắt ngày X)
-    "occurred_in",      # Event/Organization  → Date  (xảy ra vào / trong năm X)
+
+    "occurred_in",      # Event → Location  (xảy ra tại X)
     "has_revenue",      # Organization        → Money (báo cáo doanh thu X)
     "has_value",        # Organization/Product→ Money (giá trị X, ký hợp đồng X)
     "held_in",          # Event               → Location (tổ chức tại X)
@@ -64,7 +64,7 @@ _RELATION_NORM_MAP: dict[str, str | None] = {
     "developed_by_passive":        "developed_by",
     "developed_by":                "developed_by",
     "operates_in":                 "operates_in",
-    "established_in":              "established_in",
+
     "occurred_in":                 "occurred_in",
     "has_revenue":                 "has_revenue",
     "has_value":                   "has_value",
@@ -93,8 +93,8 @@ _RELATION_DOMAIN_RANGE: dict[str, list[tuple[set[str], set[str]]]] = {
     "launched_at":      [({"Product"},                {"Event"})],
     "developed_by":     [({"Product"},                {"Organization", "Person"})],
     "operates_in":      [({"Organization"},           {"Industry"})],
-    "established_in":   [({"Organization", "Product"}, {"Date"})],
-    "occurred_in":      [({"Organization", "Event", "Product"}, {"Date"})],
+
+    "occurred_in":      [({"Event"}, {"Location"})],
     "has_revenue":      [({"Organization"},           {"Money"})],
     "has_value":        [({"Organization", "Product"}, {"Money"})],
     "held_in":          [({"Event"},                  {"Location"})],
@@ -380,33 +380,15 @@ RELATION_PATTERNS: list[RelationPattern] = [
         ),
         subj_types={"ORGANIZATION"}, obj_types={"MONEY"}, confidence=0.80),
 
-    RelationPattern("has_value",
-        re.compile(
-            r"(?P<subj>" + _NAME + r")\s+(?:v\u1edbi\s+)?(?:gi\u00e1\s+tr\u1ecb|tr\u1ecb\s+gi\u00e1)"
-            r"\s+(?P<money>[\d][[\d,\.]*\s*(?:tri\u1ec7u|t\u1ef7|ngh\u00ecn)?\s*(?:USD|VND|VN\u0110|\u0111\u1ed3ng|\$)?)" + _STOP,
-            re.UNICODE,
-        ),
-        subj_types={"ORGANIZATION"}, obj_types={"MONEY"}, confidence=0.80),
-
-    RelationPattern("established_in",
-        re.compile(
-            r"(?P<org>" + _NAME + r")\s*(?:\([^)]+\))?\s*"
-            r"(?:\u0111\u01b0\u1ee3c\s+)?(?:th\u00e0nh\s+l\u1eadp|s\u00e1ng\s+l\u1eadp|ra\s+\u0111\u1eddi)"
-            r"\s+(?:t\u1ea1i|v\u00e0o|n\u0103m)?\s*"
-            r"(?P<date>[Nn]\u0103m\s+\d{4}|\d{4}|\d{1,2}/\d{1,2}/\d{4}|\d{4}-\d{2}-\d{2})" + _STOP,
-            re.UNICODE,
-        ),
-        subj_types={"ORGANIZATION"}, obj_types={"DATE"}, confidence=0.85),
 
     RelationPattern("occurred_in",
         re.compile(
-            r"(?P<subj>" + _NAME + r")\s+"
-            r"(?:[^\n]{0,60}?)"
-            r"(?:v\u00e0o\s+n\u0103m|trong\s+n\u0103m|n\u0103m)\s+"
-            r"(?P<date>\d{4})" + _STOP,
+            r"(?P<event>" + _NAME + r")\s+"
+            r"(?:x\u1ea3y\s+ra|di\u1ec5n\s+ra|\u0111\u01b0\u1ee3c\s+t\u1ed5\s+ch\u1ee9c)\s+"
+            r"(?:t\u1ea1i|\u1edf)\s+(?P<loc>" + _NAME + r")" + _STOP,
             re.UNICODE,
         ),
-        subj_types={"ORGANIZATION", "EVENT", "PRODUCT"}, obj_types={"DATE"}, confidence=0.65),
+        subj_types={"EVENT"}, obj_types={"LOCATION"}, confidence=0.75),
 ]
 
 def _jaccard(a: str, b: str) -> float:
@@ -988,50 +970,11 @@ def _extract_contextual_relations(
     events = [e for e in entities if e.type == "Event"]
     products_all = [e for e in entities if e.type == "Product"]
 
-    _est_pat = re.compile(
-        r"(?P<org>" + _NAME + r")\s*(?:\([^)]+\))?\s*"
-        r"(?:\u0111\u01b0\u1ee3c\s+)?th\u00e0nh\s+l\u1eadp"
-        r"(?:[^,\n]{0,40}?)(?:t\u1ea1i|v\u00e0o|n\u0103m)\s+"
-        r"(?P<date>[Nn]\u0103m\s+\d{4}|\d{4}|\d{1,2}/\d{1,2}/\d{4})",
-        re.UNICODE,
-    )
-    for sent in sentences:
-        for m in _est_pat.finditer(sent):
-            org_e = _best_entity_match(m.group("org").strip(), orgs, {"ORGANIZATION"})
-            dt_e = _best_entity_match(m.group("date").strip(), dates, {"DATE"})
-            if org_e and dt_e:
-                _add(org_e, dt_e, "established_in")
 
-    _year_intro = re.compile(
-        r"^(?:[Tt]rong\s+)?(?:[Nn]\u0103m|[Tt]h\u00e1ng\s+\d+\s+n\u0103m)\s+"
-        r"(?:t\u00e0i\s+ch\u00ednh\s+)?(?P<date>\d{4})",
-        re.UNICODE,
-    )
-    for sent in sentences:
-        m = _year_intro.match(sent)
-        if not m:
-            continue
-        dt_text = m.group("date")
-        dt_e = next((d for d in dates if dt_text in d.name or d.name in dt_text), None)
-        if not dt_e:
-            continue
-        for org_e in [e for e in orgs if _find_pos(e, sent) >= 0]:
-            _add(org_e, dt_e, "occurred_in")
-        for ev_e in [e for e in events if _find_pos(e, sent) >= 0]:
-            _add(ev_e, dt_e, "occurred_in")
 
-    _launch_date = re.compile(
-        r"(?P<product>" + _NAME + r")\s+(?:ch\u00ednh\s+th\u1ee9c\s+)?ra\s+m\u1eaft"
-        r"\s+v\u00e0o\s+(?:ng\u00e0y\s+)?(?P<date>[\d/]+)",
-        re.UNICODE,
-    )
-    for sent in sentences:
-        for m in _launch_date.finditer(sent):
-            prod_e = _best_entity_match(m.group("product").strip(), products_all, {"PRODUCT"})
-            dt_text = m.group("date").strip()
-            dt_e = next((d for d in dates if dt_text in d.name or d.name in dt_text), None)
-            if prod_e and dt_e:
-                _add(prod_e, dt_e, "occurred_in")
+
+
+
 
     _held_pat = re.compile(
         r"(?P<event>" + _NAME + r")\s+t\u1ed5\s+ch\u1ee9c"
@@ -1055,55 +998,10 @@ def _extract_contextual_relations(
                     _add(ev_e, loc_e, "held_in")
 
     persons = [e for e in entities if e.type == "Person"]
-    _person_date_pat = re.compile(
-        r"(?P<person>" + _NAME + r")\s+"
-        r"(?:t\u1eebng\s+)?(?:l\u00e0m\s+vi\u1ec7c|c\u00f4ng\s+t\u00e1c)\s+t\u1ea1i"
-        r"(?:[^.]{0,60}?)t\u1eeb\s+n\u0103m\s+(?P<date>\d{4})",
-        re.UNICODE,
-    )
-    for sent in sentences:
-        for m in _person_date_pat.finditer(sent):
-            per_e = _best_entity_match(m.group("person").strip(), persons, {"PERSON"})
-            dt_text = m.group("date").strip()
-            dt_e = next((d for d in dates if dt_text in d.name or d.name in dt_text), None)
-            if per_e and dt_e:
-                _add(per_e, dt_e, "occurred_in")
 
-    _temporal_intro = re.compile(
-        r"^(?:[Tt]rong\s+)?(?:[Tt]h\u00e1ng\s+\d+\s+)?[Nn]\u0103m\s+"
-        r"(?:t\u00e0i\s+ch\u00ednh\s+)?(?P<date>\d{4})",
-        re.UNICODE,
-    )
-    for sent in sentences:
-        m = _temporal_intro.match(sent)
-        if not m:
-            continue
-        dt_year = m.group("date")
-        dt_e = next((d for d in dates if dt_year in d.name), None)
-        if not dt_e:
-            continue
-        for org_e in [e for e in orgs if _find_pos(e, sent) >= 0]:
-            _add(org_e, dt_e, "occurred_in")
-        for ev_e in [e for e in events if _find_pos(e, sent) >= 0]:
-            _add(ev_e, dt_e, "occurred_in")
-        for prod_e in [e for e in products_all if _find_pos(e, sent) >= 0]:
-            _add(prod_e, dt_e, "occurred_in")
 
-    _year_bare = re.compile(r"\bn\u0103m\s+(?P<y>\d{4})\b", re.UNICODE)
-    for sent in sentences:
-        for m in _year_bare.finditer(sent):
-            yr = m.group("y")
-            dt_e = next((d for d in dates if yr in d.name), None)
-            if dt_e is None:
-                continue
-            if any(r.source == dt_e.id or r.target == dt_e.id for r in rels):
-                continue
-            cands = [e for e in orgs + persons + products_all if _find_pos(e, sent) >= 0]
-            if not cands:
-                continue
-            yr_pos = m.start()
-            closest = min(cands, key=lambda e: abs(_find_pos(e, sent) - yr_pos))
-            _add(closest, dt_e, "occurred_in")
+
+
 
     moneys = [e for e in entities if e.type == "Money"]
 
@@ -1167,7 +1065,6 @@ def _extract_contextual_relations(
                 matched_money.add(mn_e.id)
 
     _ORPHAN_FALLBACK: dict[str, tuple[list[Entity], str]] = {
-        "Date":    (orgs + products_all + events, "occurred_in"),
         "Money":   (orgs + products_all,          "has_value"),
         "Percent": (orgs + products_all,          "has_value"),
         "Location":(events,                       "held_in"),
@@ -1198,9 +1095,7 @@ def _extract_contextual_relations(
     return rels
 
 _ORPHAN_RULES: dict[str, list[tuple[str, set[str], bool]]] = {
-    "Date": [
-        ("occurred_in", {"Organization", "Event", "Product"}, False),
-    ],
+    "Date": [],
     "Money": [
         ("has_revenue", {"Organization"}, False),
         ("has_value",   {"Organization", "Product"}, False),
@@ -1210,6 +1105,7 @@ _ORPHAN_RULES: dict[str, list[tuple[str, set[str], bool]]] = {
     ],
     "Location": [
         ("held_in",         {"Event"},         False),
+        ("occurred_in",     {"Event"},         False),
         ("headquartered_in",{"Organization"},  False),
         ("has_office",      {"Organization"},  False),
     ],
@@ -1222,8 +1118,7 @@ _ORPHAN_RULES: dict[str, list[tuple[str, set[str], bool]]] = {
     ],
     "Event": [
         ("held_in",    {"Location"},    True),
-        ("occurred_in",{"Date"},        True),
-        ("occurred_in",{"Organization","Product"}, False),
+        ("occurred_in",{"Location"},    True),
     ],
     "Person": [
         ("former_employee", {"Organization"}, True),
@@ -1395,19 +1290,11 @@ _KW_BRIDGE: list[tuple[str, re.Pattern, set[str], set[str], bool]] = [
          re.IGNORECASE | re.UNICODE),
      {"Organization", "Product"}, {"Money"}, False),
 
-    ("established_in",
-     re.compile(
-         r"(?<!\w)th\u00e0nh\s+l\u1eadp\s+(?:n\u0103m|v\u00e0o|t\u1eeb)"
-         r"|ra\s+\u0111\u1eddi\s+(?:n\u0103m|v\u00e0o)"
-         r"|s\u00e1ng\s+l\u1eadp\s+(?:n\u0103m|v\u00e0o)",
-         re.IGNORECASE | re.UNICODE),
-     {"Organization"}, {"Date"}, False),
-
     ("occurred_in",
      re.compile(
-         r"v\u00e0o\s+n\u0103m\s+\d{4}|trong\s+n\u0103m\s+(?:t\u00e0i\s+ch\u00ednh\s+)?\d{4}",
+         r"x\u1ea3y\s+ra\s+t\u1ea1i|di\u1ec5n\s+ra\s+t\u1ea1i|t\u1ed5\s+ch\u1ee9c\s+t\u1ea1i",
          re.IGNORECASE | re.UNICODE),
-     {"Organization", "Event", "Product"}, {"Date"}, False),
+     {"Event"}, {"Location"}, True),
 ]
 
 def _extract_keyword_bridge(

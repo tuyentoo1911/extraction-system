@@ -167,10 +167,10 @@ def metrics(request: Request, req: MetricsRequest):
 
 @app.post("/insight", response_model=InsightResponse)
 @limiter.limit("20/minute")
-def insight(request: Request, req: InsightRequest):
+async def insight(request: Request, req: InsightRequest):
     """Generate markdown insight from the current graph using backend analysis."""
     try:
-        return compute_insight_report(
+        return await compute_insight_report(
             GraphData(entities=req.entities, relations=req.relations),
             req.input_text,
         )

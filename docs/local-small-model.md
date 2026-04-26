@@ -1,22 +1,69 @@
-# Chatbot voi model local nho
+# Chatbot với model local nhỏ
 
-Muc tieu cua tai lieu nay la chay chatbot hien tai bang mot model local nho, khong phu thuoc OpenAI/Gemini. Backend da ho tro them provider `local_hf` trong `server/llm_client.py`.
+Tài liệu này hướng dẫn chạy chatbot bằng model local, không dùng nhà cung cấp API bên ngoài.
+Backend hỗ trợ hai provider local trong `server/llm_client.py`:
 
-## 1. Huong khuyen nghi
+| Provider | Mô tả |
+|---|---|
+| `local_lora` | Load base model + áp dụng LoRA adapter (PEFT) — **khuyến nghị** cho model đã fine-tune |
+| `local_hf` | Load thẳng model HuggingFace (không có adapter) |
 
-Cho project nay, nen di theo 2 giai doan:
+---
 
-1. Chay local inference truoc
-2. Sau do moi fine-tune / instruction-tune
+## 1. Provider `local_lora` — Model đã fine-tune (kge_chatbot_lora)
 
-Ly do:
-- Chatbot cua ban da co `RAG + graph context + rule fallback`
-- Voi bai toan hoi dap theo KG/KB/context, chat luong prompt + retrieval thuong quan trong hon fine-tune som
-- Fine-tune khong the thay du lieu context runtime; no chi giup model biet cach tra loi dung format va dung phong cach
+Model `kge_chatbot_lora` là Qwen2.5-3B-Instruct đã được fine-tune với LoRA trên bộ dữ liệu KGE.
 
-## 2. Cau hinh local model
+**Cấu hình `.env`:**
 
-Them vao file `.env` o root project:
+```env
+LLM_PROVIDER=local_lora
+LLM_MODEL=./model/kge_chatbot_lora
+
+# Tuỳ chọn: override base model (mặc định đọc từ adapter_config.json)
+# CPU: đổi sang Qwen/Qwen2.5-3B-Instruct để tránh cần bitsandbytes
+LLM_BASE_MODEL=
+
+# GPU: bật 4-bit quantization để tiết kiệm VRAM (~2 GB)
+LLM_LOAD_IN_4BIT=false
+
+LLM_DEVICE_MAP=auto
+LLM_TORCH_DTYPE=auto
+LLM_MAX_INPUT_TOKENS=3072
+LLM_MAX_NEW_TOKENS=512
+LLM_TEMPERATURE=0.2
+LLM_TOP_P=0.9
+```
+
+**Cài đặt phụ thuộc:**
+
+```bash
+pip install -r requirements.txt
+
+# Nếu dùng LLM_LOAD_IN_4BIT=true (CUDA GPU):
+pip install bitsandbytes
+```
+
+**Cơ chế hoạt động:**
+1. Backend đọc `adapter_config.json` trong `./model/kge_chatbot_lora/` để xác định base model.
+2. Download base model từ HuggingFace (nếu chưa có trong cache).
+3. Áp dụng LoRA adapter weights từ `adapter_model.safetensors`.
+4. Load tokenizer từ thư mục adapter.
+5. Cache model trong RAM/VRAM — lần đầu chậm (~30–120s), các lần sau tức thì.
+
+**Yêu cầu phần cứng:**
+
+| Chế độ | VRAM / RAM | Ghi chú |
+|---|---|---|
+| GPU + 4-bit (`LLM_LOAD_IN_4BIT=true`) | ~2–3 GB VRAM | Cần bitsandbytes + CUDA |
+| GPU full precision | ~6–7 GB VRAM | `LLM_TORCH_DTYPE=float16` |
+| CPU | ~7–8 GB RAM | Chậm hơn, đặt `LLM_DEVICE_MAP=cpu` |
+
+---
+
+## 2. Provider `local_hf` — Model HuggingFace không có LoRA
+
+Dùng khi muốn chạy thẳng một model từ HuggingFace (không có fine-tune LoRA).
 
 ```env
 LLM_PROVIDER=local_hf
@@ -24,78 +71,86 @@ LLM_MODEL=Qwen/Qwen2.5-3B-Instruct
 LLM_DEVICE_MAP=auto
 LLM_TORCH_DTYPE=auto
 LLM_MAX_INPUT_TOKENS=3072
-LLM_MAX_NEW_TOKENS=256
+LLM_MAX_NEW_TOKENS=512
 LLM_TEMPERATURE=0.2
 LLM_TOP_P=0.9
 ```
 
-Ban cung co the dat `LLM_MODEL` thanh duong dan local, vi du:
+Model nhỏ gợi ý:
+- `Qwen/Qwen2.5-3B-Instruct` — cân bằng tốt chất lượng / tốc độ
+- `Qwen/Qwen2.5-1.5B-Instruct` — nhẹ hơn, vẫn hỗ trợ tiếng Việt
+- `Qwen/Qwen2.5-0.5B-Instruct` — rất nhẹ, chất lượng thấp hơn
 
+---
+
+## 3. Biến môi trường tham chiếu đầy đủ
+
+| Biến | Mặc định | Mô tả |
+|---|---|---|
+| `LLM_PROVIDER` | _(trống)_ | `local_lora`, `local_hf` |
+| `LLM_MODEL` | _(trống)_ | Đường dẫn adapter (local_lora) hoặc model id |
+| `LLM_BASE_MODEL` | _(trống)_ | Override base model cho `local_lora` |
+| `LLM_LOAD_IN_4BIT` | `false` | Bật 4-bit BNB quantization |
+| `LLM_DEVICE_MAP` | `auto` | `auto`, `cpu`, `cuda:0`, ... |
+| `LLM_TORCH_DTYPE` | `auto` | `auto`, `float16`, `bfloat16`, `float32` |
+| `LLM_MAX_INPUT_TOKENS` | `3072` | Cắt prompt nếu vượt quá |
+| `LLM_MAX_NEW_TOKENS` | `512` | Số token tối đa sinh ra |
+| `LLM_TEMPERATURE` | `0.2` | Nhiệt độ sampling (0 = greedy) |
+| `LLM_TOP_P` | `0.9` | Top-p nucleus sampling |
+
+---
+
+## 4. Xử lý sự cố
+
+**Lỗi `ModuleNotFoundError: peft`:**
+```bash
+pip install peft>=0.10.0
+```
+
+**Lỗi `ModuleNotFoundError: bitsandbytes`:**
+```bash
+pip install bitsandbytes
+# Hoặc tắt: LLM_LOAD_IN_4BIT=false
+```
+
+**Base model không load được (CUDA OOM):**
+- Giảm `LLM_TORCH_DTYPE=float16`
+- Hoặc bật `LLM_LOAD_IN_4BIT=true` (cần bitsandbytes)
+- Hoặc đặt `LLM_DEVICE_MAP=cpu`
+
+**Override base model sang bản không quantize (CPU-friendly):**
 ```env
-LLM_MODEL=D:/models/qwen2.5-3b-instruct
+LLM_BASE_MODEL=Qwen/Qwen2.5-3B-Instruct
+LLM_DEVICE_MAP=cpu
+LLM_TORCH_DTYPE=float32
 ```
 
-## 3. Model nho nen thu
+**Chatbot vẫn hoạt động nếu model không load được:**
+Backend tự động fallback sang rule-based engine nếu LLM raise exception.
 
-Neu uu tien tieng Viet + instruction following:
+---
 
-- `Qwen/Qwen2.5-3B-Instruct`
-- `Qwen/Qwen2.5-1.5B-Instruct`
-- `microsoft/Phi-3.5-mini-instruct`
+## 5. Luồng hoạt động
 
-Neu may yeu hon:
-
-- `Qwen/Qwen2.5-0.5B-Instruct`
-
-Luu y:
-- 0.5B se rat nhe nhung chat luong suy luan KG va format tra loi se kem hon
-- 1.5B hoac 3B thuong la diem can bang tot hon cho chatbot noi bo
-
-## 4. Fine-tune dung bai toan
-
-Neu ban muon fine-tune that su, nen fine-tune cho:
-
-- format tra loi ngan gon
-- uu tien relation 1-hop truoc 2-hop
-- tu choi khi context khong du
-- giu dung ngon ngu Viet/Anh theo user
-
-Khong nen ky vong fine-tune de "nho" toan bo knowledge graph, vi KG/KB cua ban thay doi theo input. Phan do van nen dua vao context runtime.
-
-Dataset SFT nen co dang:
-
-```json
-{
-  "messages": [
-    {"role": "system", "content": "Ban la AI Chatbot cua he thong Knowledge Graph Extractor..."},
-    {"role": "user", "content": "Question: ...\n\nKnowledge Graph:\n...\n\nKnowledge Base:\n...\n\nInput text:\n...\n\nRAG context:\n..."},
-    {"role": "assistant", "content": "[Thuc the A] --(quan he)--> [Thuc the B]"}
-  ]
-}
 ```
-
-## 5. Cach gan model fine-tuned vao app
-
-Sau khi fine-tune xong, ban khong can sua flow chatbot. Chi can doi:
-
-```env
-LLM_PROVIDER=local_hf
-LLM_MODEL=D:/duong-dan/toi/checkpoint-hoac-model-da-fine-tune
+.env: LLM_PROVIDER=local_lora, LLM_MODEL=./model/kge_chatbot_lora
+         │
+         ▼
+llm_client._get_lora_model()
+   ├─ Đọc adapter_config.json → base_model = "unsloth/qwen2.5-3b-instruct-unsloth-bnb-4bit"
+   ├─ AutoModelForCausalLM.from_pretrained(base_model, ...)
+   ├─ PeftModel.from_pretrained(base_model, adapter_dir)
+   └─ AutoTokenizer.from_pretrained(adapter_dir)
+         │
+         ▼ (cache trong bộ nhớ)
+chat_service.handle_chat()
+   ├─ RAG retrieval (BM25)
+   ├─ _build_graph_context()
+   └─ llm_client.generate(system_prompt, history)
+              │
+              ▼
+        _call_local_lora()
+              │
+              ▼
+        _generate_local_text()  → trả về câu trả lời
 ```
-
-Neu ban fine-tune bang LoRA/QLoRA, cach deploy on dinh nhat cho app nay la:
-
-- merge adapter vao base model roi luu thanh mot thu muc model hoan chinh
-- tro `LLM_MODEL` vao thu muc da merge do
-
-## 6. Gioi han hien tai
-
-- Moi truong Codex hien tai khong co Python runtime san sang, nen chua the test load model ngay tai day
-- Backend da duong hoa san cho local inference, nhung ban van can cai model va chay tren may cua ban
-
-## 7. Buoc tiep theo hop ly nhat
-
-1. Thu `Qwen/Qwen2.5-1.5B-Instruct` hoac `Qwen/Qwen2.5-3B-Instruct`
-2. Do chat luong tren bo cau hoi KG thuc te
-3. Neu format chua deu, tao bo SFT nho de fine-tune
-4. Sau do tro `LLM_MODEL` sang checkpoint fine-tuned

@@ -36,16 +36,36 @@ logger = logging.getLogger(__name__)
 
 _MAX_CONTEXT_ENTITIES = 30
 _MAX_CONTEXT_RELATIONS = 60
-_MAX_HISTORY_FOR_LLM = 20
+_MAX_HISTORY_FOR_LLM = 10
 
+# System prompt khớp với định dạng model đã được fine-tune
 _SYSTEM_PROMPT = """\
 Bạn là AI Chatbot của hệ thống Knowledge Graph Extractor.
 
 Bạn có quyền truy cập vào:
-- Knowledge Graph (entities, relations) — nguồn ưu tiên cao nhất
-- Knowledge Base (triple)
-- Văn bản gốc (input text)
-- Ngữ cảnh được truy xuất từ RAG pipeline
+1. Knowledge Graph (thực thể và quan hệ)
+2. Knowledge Base (các triple)
+3. Văn bản gốc (input text)
+4. Ngữ cảnh truy xuất (RAG context)
+
+NHIỆM VỤ:
+- Trả lời câu hỏi của người dùng dựa hoàn toàn trên dữ liệu được cung cấp trong context.
+- Phân tích mối quan hệ giữa các thực thể nếu có.
+- Đưa ra câu trả lời rõ ràng, chính xác, có cấu trúc.
+
+QUY TẮC QUAN TRỌNG:
+- KHÔNG được bịa thông tin.
+- KHÔNG suy đoán ngoài dữ liệu.
+- Nếu không có thông tin -> trả lời: "Không tìm thấy thông tin trong dữ liệu."
+- Ưu tiên: (1) Quan hệ trực tiếp → (2) Quan hệ gián tiếp → (3) Knowledge Base → (4) Văn bản gốc
+
+CÁCH TRẢ LỜI:
+- Nếu là quan hệ: [Thực thể A] --(quan hệ)--> [Thực thể B]
+- Nếu là liệt kê: dùng bullet points
+- Nếu là so sánh: trình bày rõ từng tiêu chí
+- Nếu là phân tích: giải thích ngắn gọn + kết luận
+- Luôn trả lời bằng ngôn ngữ của người dùng (Việt/Anh)
+- Trả lời ngắn gọn, tối đa 5-8 dòng nếu không cần thiết dài hơn.
 
 MỤC TIÊU:
 Trả lời chính xác câu hỏi người dùng bằng cách phân tích dữ liệu từ Knowledge Graph.
@@ -159,7 +179,6 @@ async def handle_chat(req: ChatRequest) -> ChatResponse:
 
     history_rows = _safe_get_history(session_id)
 
-    graph_context = _build_graph_context(req.message, req.entities, req.relations)
     rag_context = rag_mod.retrieve_context(
         req.message, req.input_text, req.entities, req.relations,
     )
@@ -169,7 +188,14 @@ async def handle_chat(req: ChatRequest) -> ChatResponse:
 
     if llm_client.is_configured():
         try:
-            reply = await _call_llm(history_rows, graph_context, rag_context)
+            reply = await _call_llm(
+                history=history_rows,
+                question=req.message,
+                entities=req.entities,
+                relations=req.relations,
+                input_text=req.input_text,
+                rag_context=rag_context,
+            )
             engine = "llm"
         except Exception:
             logger.warning("LLM call failed, falling back to rule-based.", exc_info=True)
@@ -221,163 +247,86 @@ def _safe_get_history(session_id: str, limit: int = 50) -> list[dict]:
         logger.warning("Failed to load chat history.", exc_info=True)
         return []
 
-def _build_graph_context(
+
+def _compact_kg(entities: list[Entity], relations: list[Relation]) -> str:
+    """Build compact KG string in training format: [A] --(rel)--> [B]."""
+    entity_map = {e.id: e.name for e in entities}
+    lines: list[str] = []
+    for r in relations[:_MAX_CONTEXT_RELATIONS]:
+        src = entity_map.get(r.source, r.source)
+        tgt = entity_map.get(r.target, r.target)
+        pred_tag = " [dự đoán]" if r.isPredicted else ""
+        lines.append(f"[{src}] --({r.label})--> [{tgt}]{pred_tag}")
+    if not lines:
+        entity_names = [e.name for e in entities[:20]]
+        if entity_names:
+            return "Entities: " + ", ".join(entity_names) + "\n(chưa có quan hệ)"
+        return "(no data)"
+    return "\n".join(lines)
+
+
+def _compact_kb(entities: list[Entity]) -> str:
+    """Fetch relevant KB triples for the given entities."""
+    if not kb.kb_ready or not entities:
+        return "(none)"
+    lines: list[str] = []
+    seen: set[str] = set()
+    for e in entities[:10]:
+        for t in kb.get_entity_triples(e.name, limit=5):
+            row = f"{t['subject']} | {t['relation']} | {t['object']}"
+            if row not in seen:
+                seen.add(row)
+                lines.append(row)
+    return "\n".join(lines) if lines else "(none)"
+
+
+def _build_structured_user_msg(
     question: str,
     entities: list[Entity],
     relations: list[Relation],
+    rag_context: str,
+    input_text: str,
 ) -> str:
-    """Build a richly-formatted graph context block for the LLM.
-
-    Implements:
-      FIX 1 — structured section headers
-      FIX 4 — degree-aware entity scoring (hub boost)
-      FIX 6 — reasoning hints, confidence tags, top-node awareness
-    """
-    if not entities:
-        return "(No graph data provided.)"
-
-    q_lower = question.lower()
-    entity_map = {e.id: e for e in entities}
-
-    deg: dict[str, int] = defaultdict(int)
-    for e in entities:
-        deg[e.id] = 0
-    for r in relations:
-        deg[r.source] += 1
-        deg[r.target] += 1
-
-    scored: list[tuple[Entity, float]] = []
-    for e in entities:
-        score = 0.0
-        if e.name.lower() in q_lower:
-            score += 10.0
-        for alias in getattr(e, "aliases", []):
-            if alias.lower() in q_lower:
-                score += 5.0
-        score += min(deg.get(e.id, 0) * 0.3, 3.0)
-        scored.append((e, score))
-
-    scored.sort(key=lambda x: x[1], reverse=True)
-    top_entities = scored[:_MAX_CONTEXT_ENTITIES]
-    top_ids = {e.id for e, _ in top_entities}
-
-    relevant_rels = [
-        r for r in relations
-        if r.source in top_ids or r.target in top_ids
-    ][:_MAX_CONTEXT_RELATIONS]
-
-    def _ename(eid: str) -> str:
-        ent = entity_map.get(eid)
-        return ent.name if ent else eid
-
-    lines: list[str] = [
-        "═══════════════════════════════════════",
-        "  KNOWLEDGE GRAPH CONTEXT",
-        "═══════════════════════════════════════",
-        "",
-    ]
-
-    top_hubs = sorted(deg.items(), key=lambda x: x[1], reverse=True)[:5]
-    if top_hubs:
-        lines.append("### Top Hub Nodes (most connected):")
-        for eid, d in top_hubs:
-            if eid in entity_map:
-                e = entity_map[eid]
-                lines.append(f"  • {e.name} [{e.type}] — {d} connections")
-        lines.append("")
-
-    predicted_rel_count = sum(1 for r in relevant_rels if r.isPredicted)
-    lines.append(f"### Entities ({len(top_entities)}/{len(entities)}):")
-    for e, _ in top_entities:
-        d = deg.get(e.id, 0)
-        props_str = ""
-        if e.properties:
-            props_str = "  |  " + ", ".join(
-                f"{p.key}={p.value}" for p in e.properties[:3]
-            )
-        mention_tag = "  ← [MENTIONED IN QUERY]" if e.name.lower() in q_lower else ""
-        lines.append(f"  • {e.name} [{e.type}] (degree={d}){props_str}{mention_tag}")
-
-    lines.append("")
-
-    lines.append(
-        f"### Relations ({len(relevant_rels)}/{len(relations)}"
-        f"{f', predicted={predicted_rel_count}' if predicted_rel_count else ''}):"
+    """Build the user message in the format the fine-tuned model was trained on."""
+    kg_text = _compact_kg(entities, relations)
+    kb_text = _compact_kb(entities)
+    text_snippet = (input_text[:400] + "...") if len(input_text) > 400 else input_text
+    rag_text = rag_context if rag_context and rag_context.strip() not in {
+        "(No relevant context found.)", ""
+    } else "(none)"
+    return (
+        f"Question:\n{question}\n\n"
+        f"Knowledge Graph:\n{kg_text}\n\n"
+        f"Knowledge Base:\n{kb_text}\n\n"
+        f"Input Text:\n{text_snippet or '(none)'}\n\n"
+        f"RAG Context:\n{rag_text}"
     )
-    for r in relevant_rels:
-        conf_tag = "  [PREDICTED — lower confidence]" if r.isPredicted else ""
-        lines.append(
-            f"  [{_ename(r.source)}] --({r.label})--> [{_ename(r.target)}]{conf_tag}"
-        )
 
-    lines.append("")
-    lines.append("### Graph Insights (reasoning hints):")
-
-    if top_hubs and top_hubs[0][0] in entity_map:
-        hub_e = entity_map[top_hubs[0][0]]
-        hub_d = top_hubs[0][1]
-        lines.append(
-            f"  • Hub: '{hub_e.name}' is the most central node ({hub_d} connections) "
-            f"— likely the most important entity in this graph."
-        )
-
-    query_entities = [e for e in entities if e.name.lower() in q_lower]
-    for qe in query_entities[:2]:
-        qe_deg = deg.get(qe.id, 0)
-        if qe_deg == 0:
-            lines.append(f"  • '{qe.name}' has no relations yet — limited information available.")
-        else:
-            lines.append(f"  • '{qe.name}' has {qe_deg} connection(s) in this graph.")
-
-    if len(query_entities) >= 2:
-        ea_neighbors = {
-            r.target if r.source == query_entities[0].id else r.source
-            for r in relations
-            if r.source == query_entities[0].id or r.target == query_entities[0].id
-        }
-        eb_neighbors = {
-            r.target if r.source == query_entities[1].id else r.source
-            for r in relations
-            if r.source == query_entities[1].id or r.target == query_entities[1].id
-        }
-        common = ea_neighbors & eb_neighbors - {query_entities[0].id, query_entities[1].id}
-        if common:
-            common_names = ", ".join(
-                f"'{_ename(cid)}'" for cid in list(common)[:3]
-            )
-            lines.append(
-                f"  • '{query_entities[0].name}' and '{query_entities[1].name}' "
-                f"share common neighbor(s): {common_names} — useful for 2-hop reasoning."
-            )
-
-    type_counts = Counter(e.type for e in entities)
-    if type_counts:
-        dom_type, dom_cnt = type_counts.most_common(1)[0]
-        lines.append(f"  • Dominant entity type: {dom_type} ({dom_cnt}/{len(entities)} nodes).")
-
-    if predicted_rel_count:
-        lines.append(
-            f"  • {predicted_rel_count} relation(s) are PREDICTED (not extracted from source text) "
-            f"— treat with lower confidence."
-        )
-
-    lines.append("═══════════════════════════════════════")
-    return "\n".join(lines)
 
 async def _call_llm(
     history: list[dict],
-    graph_context: str,
+    question: str,
+    entities: list[Entity],
+    relations: list[Relation],
+    input_text: str = "",
     rag_context: str = "",
 ) -> str:
-    system = _SYSTEM_PROMPT + "\n\n" + graph_context
-    if rag_context and rag_context.strip() not in {"(No relevant context found.)", ""}:
-        system += "\n\n" + rag_context
+    # Build the structured user message the model was trained on
+    structured_user_msg = _build_structured_user_msg(
+        question, entities, relations, rag_context, input_text
+    )
 
+    # Past turns (exclude the current user turn which is last in history)
     msgs: list[dict[str, str]] = []
-    for row in history[-_MAX_HISTORY_FOR_LLM:]:
-        msgs.append({"role": row["role"], "content": row["content"]})
+    past_history = history[-(_MAX_HISTORY_FOR_LLM * 2 + 1):-1]
+    for row in past_history:
+        role = "assistant" if row["role"] == "model" else row["role"]
+        msgs.append({"role": role, "content": row["content"]})
 
-    return await llm_client.generate(system, msgs)
+    # Current user turn with full structured context
+    msgs.append({"role": "user", "content": structured_user_msg})
+
+    return await llm_client.generate(_SYSTEM_PROMPT, msgs)
 
 _FUZZY_THRESHOLD = 0.50
 

@@ -3,12 +3,13 @@
 fastapi>=0.115.0
 uvicorn[standard]>=0.32.0
 slowapi>=0.1.9
-transformers>=4.40.0
+transformers>=4.46.0
 torch>=2.0.0
+peft>=0.10.0
 pypdf>=5.0.0
 networkx>=3.0
 psycopg[binary]>=3.1.0
 psycopg_pool>=3.1.0
-httpx>=0.27.0
 python-dotenv>=1.0.0
 rank-bm25>=0.2.2
+# bitsandbytes>=0.43.0  # tuỳ chọn: bật nếu dùng LLM_LOAD_IN_4BIT=true (yêu cầu CUDA GPU)

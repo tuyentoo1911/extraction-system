@@ -35,3 +35,6 @@ notebooks
 *.db-shm
 *db-wal
 docs/chatbot.md
+
+input.txt
+output.json

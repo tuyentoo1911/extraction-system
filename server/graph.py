@@ -41,12 +41,13 @@ ALLOWED_RELATIONS: frozenset[str] = frozenset({
     "has_revenue",      # Organization        → Money (báo cáo doanh thu X)
     "has_value",        # Organization/Product→ Money (giá trị X, ký hợp đồng X)
     "held_in",          # Event               → Location (tổ chức tại X)
+    "founded_at",       # Organization/Person → Date    (thành lập năm X) — Bug-7
+    "supply_to",        # Organization        → Organization (cung cấp cho) — Bug-6
 })
 
 _RELATION_NORM_MAP: dict[str, str | None] = {
     "founded_by":                  "founded",
     "founded_by_passive":          "founded",
-    "founded":                     "founded",
     "headquartered_in":            "headquartered_in",
     "opened_office_in":            "has_office",
     "has_office":                  "has_office",
@@ -69,6 +70,8 @@ _RELATION_NORM_MAP: dict[str, str | None] = {
     "has_revenue":                 "has_revenue",
     "has_value":                   "has_value",
     "held_in":                     "held_in",
+    "founded_at":                  "founded_at",   # Bug-7
+    "supply_to":                   "supply_to",    # Bug-6
     "HỢP TÁC":                    "partnered_with",
     "ĐẶT TẠI":                    "headquartered_in",
     "SẢN XUẤT":                    "developed_by",
@@ -98,6 +101,8 @@ _RELATION_DOMAIN_RANGE: dict[str, list[tuple[set[str], set[str]]]] = {
     "has_revenue":      [({"Organization"},           {"Money"})],
     "has_value":        [({"Organization", "Product"}, {"Money"})],
     "held_in":          [({"Event"},                  {"Location"})],
+    "founded_at":       [({"Organization", "Person"},  {"Date"})],   # Bug-7
+    "supply_to":        [({"Organization"},             {"Organization"})],  # Bug-6
 }
 
 _NEWS_SOURCES: frozenset[str] = frozenset({
@@ -106,6 +111,15 @@ _NEWS_SOURCES: frozenset[str] = frozenset({
     "cafef", "the wall street journal", "financial times", "nikkei",
     "vietnam business review", "techcrunch", "the verge", "wired",
     "forbes", "business insider", "the guardian", "new york times",
+})
+
+# Broad geographic regions / markets — must NOT be used as HQ/office addresses
+# in the orphan fallback (they describe market expansion, not office location).
+_BROAD_REGIONS: frozenset[str] = frozenset({
+    "đông nam á", "châu á", "châu âu", "châu phi", "bắc mỹ", "nam mỹ",
+    "trung đông", "đông á", "tây âu", "đông âu", "châu đại dương",
+    "asean", "toàn cầu", "khu vực",
+    "southeast asia", "east asia", "asia pacific", "global",
 })
 
 _GENERIC_DATE_WORDS = {
@@ -158,6 +172,8 @@ class RelationPattern:
     confidence   : float
     bidirectional: bool = False
     reverse_edge : bool = False
+    subj_group: str = "person" 
+    obj_group:  str = "org"     
 
 _VI_CAP = r"[A-Z\u00C0-\u024F\u1EA0-\u1EF9\u0110\u0111]"
 
@@ -410,13 +426,20 @@ def _best_entity_match(
     else:
         cands = list(entities)
 
-    for e in cands:                          # exact
+    for e in cands:                          # exact name or alias
         if e.name.lower() == ml or any(a.lower() == ml for a in getattr(e, 'aliases', [])):
             return e
-    for e in cands:                          # substring
+
+    # Bug-4 fix: sort by name length descending so the most-specific
+    # (longest) entity wins the substring pass rather than the first-found.
+    cands_by_len = sorted(cands, key=lambda e: len(e.name), reverse=True)
+    for e in cands_by_len:                   # substring — longest name first
         el = e.name.lower()
-        if el in ml or ml in el or any(a.lower() in ml or ml in a.lower() for a in getattr(e, 'aliases', [])):
+        if el in ml or ml in el:
             return e
+        if any(a.lower() in ml or ml in a.lower() for a in getattr(e, 'aliases', [])):
+            return e
+
     best_e, best_s = None, 0.0              # Jaccard
     for e in cands:
         s = max([_jaccard(n, matched_text) for n in [e.name] + getattr(e, 'aliases', [])])
@@ -547,8 +570,8 @@ def _extract_pattern_relations(
 
             for m in pat.pattern.finditer(sent):
                 try:
-                    st = m.group(1).strip()
-                    ot = m.group(2).strip()
+                    st = m.group(pat.subj_group).strip()
+                    ot = m.group(pat.obj_group).strip()
                 except (IndexError, AttributeError):
                     continue
                 if not st or not ot or st == ot:
@@ -929,21 +952,71 @@ def _extract_contextual_relations(
                 _add(subj_org, org2_e, "partnered_with")
                 _add(org2_e, subj_org, "partnered_with")
 
-    research_dev = re.compile(
+    # Bug-3 fix: split into two patterns.
+    # Pattern A: genuine development — "được phát triển/xây dựng ... với ORG"
+    #   but WITHOUT "dựa trên" (which signals a research collaboration, not authorship).
+    research_dev_direct = re.compile(
         r"(?P<product>" + _NAME + r")"
         r"\s+\u0111\u01b0\u1ee3c\s+(?:x\u00e2y\s+d\u1ef1ng|ph\u00e1t\s+tri\u1ec3n)"
-        r"(?:\s+d\u1ef1a\s+tr\u00ean)?"
+        r"(?!\s+d\u1ef1a\s+tr\u00ean)"  # negative-lookahead: skip if "dựa trên" follows
+        r"(?:[^.]{0,80}?)"
+        r"(?:h\u1ee3p\s+t\u00e1c\s+)?v\u1edbi\s+"
+        r"(?P<org>" + _NAME + r")",
+        re.UNICODE,
+    )
+    # Pattern B: research-based — "được xây dựng dựa trên (nghiên cứu) (hợp tác) với ORG"
+    #   → creates partnered_with (ORG is a research partner, not the developer).
+    research_dev_collab = re.compile(
+        r"(?P<product>" + _NAME + r")"
+        r"\s+\u0111\u01b0\u1ee3c\s+(?:x\u00e2y\s+d\u1ef1ng|ph\u00e1t\s+tri\u1ec3n)"
+        r"\s+d\u1ef1a\s+tr\u00ean"
         r"(?:[^.]{0,80}?)"
         r"(?:nghi\u00ean\s+c\u1ee9u\s+)?(?:h\u1ee3p\s+t\u00e1c\s+)?v\u1edbi\s+"
         r"(?P<org>" + _NAME + r")",
         re.UNICODE,
     )
+    # Bug-K refined fix: instead of "last-seen orgs" fallback (which incorrectly
+    # includes FPT from the employment sentence), do a product-aware document
+    # search: find orgs that co-occur with the SAME PRODUCT in other sentences
+    # that also contain development/collaboration keywords. This yields the
+    # actual co-developers (SaoVietTech, Global AI) rather than unrelated orgs.
+    _collab_kw = re.compile(
+        r"h\u1ee3p\s+t\u00e1c|c\u00f9ng\s+ph\u00e1t\s+tri\u1ec3n|c\u00f9ng\s+x\u00e2y\s+d\u1ef1ng"
+        r"|k\u00fd\s+th\u1ecfa\s+thu\u1eadn|k\u00fd\s+h\u1ee3p\s+\u0111\u1ed3ng",
+        re.IGNORECASE | re.UNICODE,
+    )
     for sent in sentences:
-        for m in research_dev.finditer(sent):
+        for m in research_dev_direct.finditer(sent):
             prod_e = _best_entity_match(m.group("product").strip(), products, {"PRODUCT"})
-            org_e = _best_entity_match(m.group("org").strip(), orgs, {"ORGANIZATION"})
+            org_e  = _best_entity_match(m.group("org").strip(), orgs, {"ORGANIZATION"})
             if prod_e and org_e:
                 _add(prod_e, org_e, "developed_by")
+        for m in research_dev_collab.finditer(sent):
+            org_e = _best_entity_match(m.group("org").strip(), orgs, {"ORGANIZATION"})
+            if not org_e:
+                continue
+            sent_orgs_here = [e for e in orgs if _find_pos(e, sent) >= 0 and e.id != org_e.id]
+            if not sent_orgs_here:
+                # No co-located org → search document for orgs that co-occur with
+                # the same product in sentences containing collab/dev keywords.
+                prod_e = _best_entity_match(m.group("product").strip(), products, {"PRODUCT"})
+                if prod_e:
+                    seen_ids: set[str] = set()
+                    for other_sent in sentences:
+                        if other_sent == sent:
+                            continue
+                        if not _collab_kw.search(other_sent):
+                            continue
+                        if _find_pos(prod_e, other_sent) < 0:
+                            continue
+                        for co_org in orgs:
+                            if _find_pos(co_org, other_sent) >= 0 and co_org.id != org_e.id:
+                                if co_org.id not in seen_ids:
+                                    seen_ids.add(co_org.id)
+                                    sent_orgs_here.append(co_org)
+            for subj in sent_orgs_here:
+                _add(subj, org_e, "partnered_with")
+                _add(org_e, subj, "partnered_with")
 
     _operate_explicit = re.compile(
         r"(?:thu\u1ed9c\s+l\u0129nh\s+v\u1ef1c|chuy\u00ean\s+v\u1ec1|chuy\u00ean\s+trong"
@@ -969,6 +1042,94 @@ def _extract_contextual_relations(
     dates = [e for e in entities if e.type == "Date"]
     events = [e for e in entities if e.type == "Event"]
     products_all = [e for e in entities if e.type == "Product"]
+
+    # ── Bug-6: supply/contract pattern ──────────────────────────────────────
+    # "ký hợp đồng cung cấp <product?> cho <org>" → supply_to (seller → buyer)
+    _supply_pat = re.compile(
+        r"(?P<seller>" + _NAME + r")\s+"
+        r"k\u00fd\s+h\u1ee3p\s+\u0111\u1ed3ng\s+cung\s+c\u1ea5p"
+        r"(?:[^\n]{0,80}?)"
+        r"cho\s+(?P<buyer>" + _NAME + r")",
+        re.UNICODE,
+    )
+    for sent in sentences:
+        for m in _supply_pat.finditer(sent):
+            seller_e = _best_entity_match(m.group("seller").strip(), orgs, {"ORGANIZATION"})
+            buyer_e  = _best_entity_match(m.group("buyer").strip(),  orgs, {"ORGANIZATION"})
+            if seller_e and buyer_e:
+                _add(seller_e, buyer_e, "supply_to")
+
+    # ── Bug-2: co-development pronoun resolver ───────────────────────────────
+    # "hai bên cùng phát triển ... VisionX" → developed_by for each recent org
+    _codev_pronoun = re.compile(
+        r"(?:hai\s+b\u00ean|c\u1ea3\s+hai|hai\s+c\u00f4ng\s+ty)\s+"
+        r"(?:c\u00f9ng\s+ph\u00e1t\s+tri\u1ec3n|c\u00f9ng\s+x\u00e2y\s+d\u1ef1ng|c\u00f9ng\s+s\u1ea3n\s+xu\u1ea5t)"
+        r"(?:[^\n]{0,80}?)"
+        r"(?:s\u1ea3n\s+ph\u1ea9m\s+)?(?:mang\s+t\u00ean|c\u00f3\s+t\u00ean|g\u1ecdi\s+l\u00e0|t\u00ean\s+l\u00e0\s+|l\u00e0\s+)?"
+        r"(?P<product>[A-Z][\w]*(?:\s+[A-Z][\w]*)*)",
+        re.UNICODE,
+    )
+    # ── Bug-G: "PRODUCT do (nhóm nghiên cứu của)? ORG phát triển" ───────────────
+    # Tier-1 pattern failed because default subj_group="person" didn’t match
+    # the "product" group name. This contextual pass fixes it.
+    _dev_passive_do = re.compile(
+        r"(?P<product>" + _NAME + r")\s+"
+        r"(?:do|b\u1edfi)\s+(?:nh\u00f3m\s+nghi\u00ean\s+c\u1ee9u\s+c\u1ee7a\s+)?"
+        r"(?P<org>" + _NAME + r")\s+"
+        r"(?:ph\u00e1t\s+tri\u1ec3n|x\u00e2y\s+d\u1ef1ng|s\u1ea3n\s+xu\u1ea5t|ch\u1ebf\s+t\u1ea1o)",
+        re.UNICODE,
+    )
+    for sent in sentences:
+        for m in _dev_passive_do.finditer(sent):
+            prod_e = _best_entity_match(m.group("product").strip(), products, {"PRODUCT"})
+            org_e  = _best_entity_match(m.group("org").strip(), orgs, {"ORGANIZATION"})
+            if prod_e and org_e:
+                _add(prod_e, org_e, "developed_by")
+
+    # Bug-2 co-dev pronoun resolver
+    recent_org_pair: list[Entity] = []
+    for sent in sentences:
+        sent_orgs_here2 = [e for e in orgs if _find_pos(e, sent) >= 0]
+        for o in sent_orgs_here2:
+            if not recent_org_pair or recent_org_pair[-1].id != o.id:
+                recent_org_pair.append(o)
+        recent_org_pair = recent_org_pair[-2:]
+        for m in _codev_pronoun.finditer(sent):
+            prod_e = _best_entity_match(m.group("product").strip(), products, {"PRODUCT"})
+            if not prod_e:
+                continue
+            for org_e in recent_org_pair:
+                _add(prod_e, org_e, "developed_by")
+
+    # ── Bug-7 + Bugs B/C/D/E: tighter founded_at patterns ───────────────────────
+    # Require passive voice ("được") immediately before the founding verb so that
+    # employment-year sentences like "từng làm việc tại FPT từ năm 2010" don’t match.
+    _founded_at_pre = re.compile(
+        # "Năm YYYY, <ORG> được thành lập..."
+        r"(?:N\u0103m|n\u0103m)\s+(?P<date>\d{4})"
+        r"[^,\n]{0,8},?\s*"  # very short gap to org
+        r"(?P<org>" + _NAME + r")"
+        r"(?:[^\n]{0,50}?)\u0111\u01b0\u1ee3c\s+(?:th\u00e0nh\s+l\u1eadp|s\u00e1ng\s+l\u1eadp|ra\s+\u0111\u1eddi|khai\s+tr\u01b0\u01a1ng)",
+        re.UNICODE,
+    )
+    _founded_at_post = re.compile(
+        # "<ORG> được thành lập năm YYYY" — requires passive "được"
+        r"(?P<org>" + _NAME + r")"
+        r"(?:[^\n]{0,20}?)\u0111\u01b0\u1ee3c\s+(?:th\u00e0nh\s+l\u1eadp|s\u00e1ng\s+l\u1eadp|ra\s+\u0111\u1eddi|khai\s+tr\u01b0\u01a1ng)"
+        r"(?:[^\n]{0,20}?)(?:v\u00e0o\s+)?(?:n\u0103m\s+)?(?P<date>\d{4})",
+        re.UNICODE,
+    )
+    for sent in sentences:
+        for pat_fa in [_founded_at_pre, _founded_at_post]:
+            for m in pat_fa.finditer(sent):
+                year_str = m.group("date")
+                date_e = next(
+                    (d for d in dates if year_str in d.name),
+                    None,
+                )
+                org_e = _best_entity_match(m.group("org").strip(), orgs, {"ORGANIZATION"})
+                if org_e and date_e:
+                    _add(org_e, date_e, "founded_at")
 
 
 
@@ -1024,12 +1185,16 @@ def _extract_contextual_relations(
         r"(?P<money>[\d][[\d,\.]*\s*(?:tri\u1ec7u|t\u1ef7|ngh\u00ecn)?\s*(?:USD|VND|VN\u0110|\u0111\u1ed3ng|\$)?)",
         re.UNICODE | re.IGNORECASE,
     )
+    # Bug-5 fix: track money IDs already claimed by has_revenue so that
+    # _value_bare and _ORPHAN_FALLBACK cannot reassign them to a different owner.
+    revenue_claimed_money: set[str] = set()
     for sent in sentences:
         for m in _revenue_pat.finditer(sent):
             org_e = _best_entity_match(m.group("org").strip(), orgs, {"ORGANIZATION"})
             mn_e = _match_money(m.group("money"))
             if org_e and mn_e:
-                _add(org_e, mn_e, "has_revenue")
+                if _add(org_e, mn_e, "has_revenue"):
+                    revenue_claimed_money.add(mn_e.id)
 
     _value_buyer = re.compile(
         r"cho\s+(?P<subj>" + _NAME + r")\s*(?:\([^)]+\))?\s*"
@@ -1046,7 +1211,8 @@ def _extract_contextual_relations(
         matched_money: set[str] = set()
         for m in _value_buyer.finditer(sent):
             mn_e = _match_money(m.group("money"))
-            if not mn_e:
+            # Bug-5: skip if this money was already claimed by has_revenue
+            if not mn_e or mn_e.id in revenue_claimed_money:
                 continue
             subj = _best_entity_match(m.group("subj").strip(), orgs + products_all, None)
             if subj and _add(subj, mn_e, "has_value"):
@@ -1054,7 +1220,8 @@ def _extract_contextual_relations(
 
         for m in _value_bare.finditer(sent):
             mn_e = _match_money(m.group("money"))
-            if not mn_e or mn_e.id in matched_money:
+            # Bug-5: skip if already claimed by has_revenue or _value_buyer
+            if not mn_e or mn_e.id in matched_money or mn_e.id in revenue_claimed_money:
                 continue
             match_pos = m.start()
             cands = [e for e in orgs + products_all if _find_pos(e, sent) >= 0]
@@ -1071,6 +1238,10 @@ def _extract_contextual_relations(
     }
     for fb_type, (fb_cands, fb_lbl) in _ORPHAN_FALLBACK.items():
         for fb_e in [e for e in entities if e.type == fb_type]:
+            # Bug-5: money already assigned via has_revenue must not be
+            # reassigned to a different entity by the orphan fallback.
+            if fb_type == "Money" and fb_e.id in revenue_claimed_money:
+                continue
             if any(r.source == fb_e.id or r.target == fb_e.id for r in rels):
                 continue
             best_target2: Optional[Entity] = None
@@ -1095,6 +1266,10 @@ def _extract_contextual_relations(
     return rels
 
 _ORPHAN_RULES: dict[str, list[tuple[str, set[str], bool]]] = {
+    # Bug-J/L fix: remove founded_at from Date orphan rules.
+    # Employment-year dates (năm 2010, năm 2020) sharing a sentence with an
+    # org must NOT become founded_at targets — only the pattern/keyword tier
+    # should create founded_at from Date entities.
     "Date": [],
     "Money": [
         ("has_revenue", {"Organization"}, False),
@@ -1192,6 +1367,15 @@ def _connect_all_orphans(
         for rel_lbl, partner_types, orphan_is_subject in rules:
             if linked:
                 break
+
+            # Bug-I refined: broad geographic regions ("Đông Nam Á", "châu Á"
+            # etc.) describe markets/expansion areas, not office/HQ addresses.
+            # Skip headquartered_in / has_office for these orphan Locations.
+            if rel_lbl in ("headquartered_in", "has_office") and \
+                    orphan.type == "Location" and \
+                    orphan.name.lower().strip() in _BROAD_REGIONS:
+                continue
+
             partners = [
                 e for e in entities
                 if e.type in partner_types and e.id != orphan.id
@@ -1202,6 +1386,15 @@ def _connect_all_orphans(
             partners.sort(key=lambda p: proximity_key(orphan, p))
 
             for partner in partners:
+                # Bug-F/I: locality-sensitive relation types must only connect
+                # entities that share a sentence to prevent cross-sentence
+                # Location/Date orphans latching onto wrong entities.
+                if rel_lbl in ("held_in", "occurred_in", "founded_at",
+                               "headquartered_in", "has_office"):
+                    oi = sent_map.get(orphan.id, -1)
+                    pi = sent_map.get(partner.id, -1)
+                    if oi < 0 or pi < 0 or oi != pi:
+                        continue
                 if orphan_is_subject:
                     ok = _add_orphan(orphan, partner, rel_lbl)
                 else:
@@ -1295,6 +1488,21 @@ _KW_BRIDGE: list[tuple[str, re.Pattern, set[str], set[str], bool]] = [
          r"x\u1ea3y\s+ra\s+t\u1ea1i|di\u1ec5n\s+ra\s+t\u1ea1i|t\u1ed5\s+ch\u1ee9c\s+t\u1ea1i",
          re.IGNORECASE | re.UNICODE),
      {"Event"}, {"Location"}, True),
+
+    # Bug-7: founded_at keyword bridge
+    ("founded_at",
+     re.compile(
+         r"th\u00e0nh\s+l\u1eadp\s+n\u0103m|s\u00e1ng\s+l\u1eadp\s+n\u0103m"
+         r"|n\u0103m\s+th\u00e0nh\s+l\u1eadp|ra\s+\u0111\u1eddi\s+n\u0103m",
+         re.IGNORECASE | re.UNICODE),
+     {"Organization", "Person"}, {"Date"}, False),
+
+    # Bug-6: supply_to keyword bridge
+    ("supply_to",
+     re.compile(
+         r"cung\s+c\u1ea5p(?:\s+cho)?|k\u00fd\s+h\u1ee3p\s+\u0111\u1ed3ng\s+cung\s+c\u1ea5p",
+         re.IGNORECASE | re.UNICODE),
+     {"Organization"}, {"Organization"}, False),
 ]
 
 def _extract_keyword_bridge(
@@ -1355,6 +1563,13 @@ def _extract_keyword_bridge(
             for km in kw_pat.finditer(sent):
                 kw_start = km.start()
                 kw_end = km.end()
+
+                # Bug-A: "xây dựng/phát triển" in a "dựa trên" sentence signals
+                # research collaboration, not direct authorship → skip developed_by.
+                if label == "developed_by" and re.search(
+                    r"d\u1ef1a\s+tr\u00ean", sent, re.IGNORECASE
+                ):
+                    continue
 
                 before = [(p, e) for p, e in ent_positions if p < kw_start and e.type in subj_types]
                 after  = [(p, e) for p, e in ent_positions if p >= kw_end and e.type in obj_types]

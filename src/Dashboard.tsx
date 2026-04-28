@@ -23,6 +23,15 @@ export default function Dashboard({ onBack }: { onBack: () => void }) {
   const [error, setError] = useState<string | null>(null);
   const [isInputOpen, setIsInputOpen] = useState(true);
 
+  const [copied, setCopied] = useState(false);
+
+  const handleCopyJson = () => {
+    if (!graphData) return;
+    navigator.clipboard.writeText(JSON.stringify(graphData, null, 2));
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
   const handleExtract = async () => {
     if (!inputText.trim()) return;
     setIsProcessing(true);
@@ -103,14 +112,14 @@ export default function Dashboard({ onBack }: { onBack: () => void }) {
         <div className="flex-1 flex flex-col bg-[#f4f4f0] min-w-0 min-h-0">
           <div className="flex border-b border-black/10 bg-white overflow-x-auto hide-scrollbar justify-between items-center pr-4">
             <div className="flex">
-              <TabButton active={activeTab === 'graph'}    onClick={() => setActiveTab('graph')}    icon={<Network className="w-4 h-4" />}      label="Đồ thị" />
-              <TabButton active={activeTab === 'entities'} onClick={() => setActiveTab('entities')} icon={<Database className="w-4 h-4" />}     label="Thực thể" />
-              <TabButton active={activeTab === 'relations'}onClick={() => setActiveTab('relations')}icon={<ArrowLeft className="w-4 h-4 rotate-180" />} label="Quan hệ" />
-              <TabButton active={activeTab === 'highlight'}onClick={() => setActiveTab('highlight')}icon={<Tags className="w-4 h-4" />} label="Highlight" />
-              <TabButton active={activeTab === 'metrics'}  onClick={() => setActiveTab('metrics')}  icon={<BarChart3 className="w-4 h-4" />} label="Metrics" />
-              <TabButton active={activeTab === 'insight'}  onClick={() => setActiveTab('insight')}  icon={<Lightbulb className="w-4 h-4" />}    label="Insight" />
-              <TabButton active={activeTab === 'chatbot'}  onClick={() => setActiveTab('chatbot')}  icon={<MessageSquare className="w-4 h-4" />} label="Hỏi đáp" />
-              <TabButton active={activeTab === 'json'}     onClick={() => setActiveTab('json')}     icon={<Code className="w-4 h-4" />}         label="JSON" />
+              <TabButton active={activeTab === 'graph'} onClick={() => setActiveTab('graph')} icon={<Network className="w-4 h-4" />} label="Đồ thị" />
+              <TabButton active={activeTab === 'entities'} onClick={() => setActiveTab('entities')} icon={<Database className="w-4 h-4" />} label="Thực thể" />
+              <TabButton active={activeTab === 'relations'} onClick={() => setActiveTab('relations')} icon={<ArrowLeft className="w-4 h-4 rotate-180" />} label="Quan hệ" />
+              <TabButton active={activeTab === 'highlight'} onClick={() => setActiveTab('highlight')} icon={<Tags className="w-4 h-4" />} label="Highlight" />
+              <TabButton active={activeTab === 'metrics'} onClick={() => setActiveTab('metrics')} icon={<BarChart3 className="w-4 h-4" />} label="Metrics" />
+              <TabButton active={activeTab === 'insight'} onClick={() => setActiveTab('insight')} icon={<Lightbulb className="w-4 h-4" />} label="Insight" />
+              <TabButton active={activeTab === 'chatbot'} onClick={() => setActiveTab('chatbot')} icon={<MessageSquare className="w-4 h-4" />} label="Hỏi đáp" />
+              <TabButton active={activeTab === 'json'} onClick={() => setActiveTab('json')} icon={<Code className="w-4 h-4" />} label="JSON" />
             </div>
             {graphData && (
               <div className="flex items-center gap-2">
@@ -148,11 +157,11 @@ export default function Dashboard({ onBack }: { onBack: () => void }) {
             )}
             {graphData && !isProcessing && (
               <div className="h-full min-h-0">
-                {activeTab === 'graph'     && <GraphView     data={graphData} />}
-                {activeTab === 'entities'  && <EntitiesView  data={graphData} />}
+                {activeTab === 'graph' && <GraphView data={graphData} />}
+                {activeTab === 'entities' && <EntitiesView data={graphData} />}
                 {activeTab === 'relations' && <RelationsView data={graphData} />}
                 {activeTab === 'highlight' && <HighlightView data={graphData} inputText={inputText} />}
-                {activeTab === 'metrics'   && (
+                {activeTab === 'metrics' && (
                   metricsData ? (
                     <MetricsView data={metricsData} />
                   ) : (
@@ -161,12 +170,27 @@ export default function Dashboard({ onBack }: { onBack: () => void }) {
                     </div>
                   )
                 )}
-                {activeTab === 'insight'   && <InsightView   data={graphData} inputText={inputText} />}
-                {activeTab === 'chatbot'   && <ChatbotView   data={graphData} inputText={inputText} />}
-                {activeTab === 'json'      && (
-                  <pre className="p-6 font-mono text-xs text-black/80 whitespace-pre-wrap">
-                    {JSON.stringify(graphData, null, 2)}
-                  </pre>
+                {activeTab === 'insight' && <InsightView data={graphData} inputText={inputText} />}
+                {activeTab === 'chatbot' && <ChatbotView data={graphData} inputText={inputText} />}
+                {activeTab === 'json' && (
+                  <div className="relative h-full group">
+                    <button
+                      onClick={handleCopyJson}
+                      className="absolute top-4 right-6 z-10 flex items-center gap-2 px-3 py-1.5 font-mono text-[10px] tracking-widest uppercase bg-white border border-black hover:bg-black hover:text-white transition-all shadow-sm"
+                    >
+                      {copied ? (
+                        <>Đã sao chép!</>
+                      ) : (
+                        <>
+                          <Code className="w-3 h-3" />
+                          Copy JSON
+                        </>
+                      )}
+                    </button>
+                    <pre className="p-6 font-mono text-xs text-black/80 whitespace-pre-wrap h-full overflow-auto bg-white/50">
+                      {JSON.stringify(graphData, null, 2)}
+                    </pre>
+                  </div>
                 )}
               </div>
             )}
@@ -180,7 +204,7 @@ export default function Dashboard({ onBack }: { onBack: () => void }) {
               inputText={inputText}
               setInputText={setInputText}
               useDeepAnalysis={false}
-              setUseDeepAnalysis={() => {}}
+              setUseDeepAnalysis={() => { }}
               isProcessing={isProcessing}
               error={error}
               onExtract={handleExtract}

@@ -19,6 +19,7 @@ __pycache__/
 model/**/*.safetensors
 model/**/*.bin
 model/**/*.joblib
+model/kge_chatbot_lora/
 model/knowledge_graph_output/*.png
 model/knowledge_graph_output/*.gexf
 model/knowledge_graph_output/*.graphml.xml

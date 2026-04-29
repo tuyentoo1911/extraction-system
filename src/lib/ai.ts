@@ -1,6 +1,16 @@
 ﻿// ============================================================
 
-import type { ChatApiResponse, ChatMessage, Entity, GraphData, MetricsData, Relation } from '../types';
+import type {
+  ChatApiResponse,
+  ChatMessage,
+  Entity,
+  GraphData,
+  MetricsData,
+  Relation,
+  TabId,
+  WorkspaceSessionDetail,
+  WorkspaceSessionSummary,
+} from '../types';
 
 const API_BASE_CANDIDATES = ['http://localhost:8000', 'http://localhost:8001'];
 let resolvedApiBase: string | null = null;
@@ -108,24 +118,48 @@ export async function callInsight(
   data: GraphData
 ): Promise<string> {
   await checkServer();
-  const apiBase = await resolveApiBase();
-  const res = await fetch(`${apiBase}/insight`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      entities: data.entities,
-      relations: data.relations,
-      input_text: inputText,
-    }),
+  const payload = JSON.stringify({
+    entities: data.entities,
+    relations: data.relations,
+    input_text: inputText,
   });
+
+  const postInsight = async (base: string) =>
+    fetch(`${base}/insight`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: payload,
+    });
+
+  const apiBase = await resolveApiBase();
+  let res = await postInsight(apiBase);
+
+  // Fail over to the other candidate when current backend returns server error.
+  if (!res.ok && res.status >= 500) {
+    const fallbackBase = API_BASE_CANDIDATES.find((base) => base !== apiBase);
+    if (fallbackBase) {
+      try {
+        const health = await fetch(`${fallbackBase}/health`);
+        if (health.ok) {
+          const fallbackRes = await postInsight(fallbackBase);
+          if (fallbackRes.ok) {
+            resolvedApiBase = fallbackBase;
+            res = fallbackRes;
+          }
+        }
+      } catch {
+        // Ignore fallback errors and surface the original response below.
+      }
+    }
+  }
 
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: res.statusText }));
     throw new Error(err.detail || 'Insight generation error');
   }
 
-  const payload = await res.json();
-  return payload.insight_markdown as string;
+  const responsePayload = await res.json();
+  return responsePayload.insight_markdown as string;
 }
 
 export async function callChat(
@@ -154,4 +188,76 @@ export async function callChat(
   }
 
   return res.json() as Promise<ChatApiResponse>;
+}
+
+export async function listWorkspaceSessions(limit = 50): Promise<WorkspaceSessionSummary[]> {
+  const apiBase = await resolveApiBase();
+  const res = await fetch(`${apiBase}/workspace/sessions?limit=${limit}`);
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: res.statusText }));
+    throw new Error(err.detail || 'Cannot load workspace history');
+  }
+  return res.json() as Promise<WorkspaceSessionSummary[]>;
+}
+
+export async function getWorkspaceSession(sessionId: string): Promise<WorkspaceSessionDetail> {
+  const apiBase = await resolveApiBase();
+  const res = await fetch(`${apiBase}/workspace/sessions/${sessionId}`);
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: res.statusText }));
+    throw new Error(err.detail || 'Cannot load workspace session');
+  }
+  return res.json() as Promise<WorkspaceSessionDetail>;
+}
+
+export async function saveWorkspaceSession(params: {
+  sessionId: string | null;
+  title?: string;
+  inputText: string;
+  graphData: GraphData | null;
+  metricsData: MetricsData | null;
+  insightMarkdown?: string | null;
+  chatSessionId?: string | null;
+  chatEngine?: 'llm' | 'rule-based' | null;
+  chatHistory?: ChatMessage[];
+  activeTab: TabId;
+}): Promise<string> {
+  const safeInsight =
+    typeof params.insightMarkdown === 'string'
+      ? params.insightMarkdown.slice(0, 200_000)
+      : null;
+  const safeChatHistory = (params.chatHistory ?? []).slice(-50);
+
+  const apiBase = await resolveApiBase();
+  const res = await fetch(`${apiBase}/workspace/sessions`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      session_id: params.sessionId,
+      title: params.title ?? null,
+      input_text: params.inputText,
+      graph_data: params.graphData,
+      metrics_data: params.metricsData,
+      insight_markdown: safeInsight,
+      chat_session_id: params.chatSessionId ?? null,
+      chat_engine: params.chatEngine ?? null,
+      chat_history: safeChatHistory,
+      active_tab: params.activeTab,
+    }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: res.statusText }));
+    throw new Error(err.detail || 'Cannot save workspace session');
+  }
+  const data = await res.json();
+  return data.session_id as string;
+}
+
+export async function deleteWorkspaceSession(sessionId: string): Promise<void> {
+  const apiBase = await resolveApiBase();
+  const res = await fetch(`${apiBase}/workspace/sessions/${sessionId}`, { method: 'DELETE' });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: res.statusText }));
+    throw new Error(err.detail || 'Cannot delete workspace session');
+  }
 }

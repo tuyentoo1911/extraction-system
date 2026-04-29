@@ -70,8 +70,8 @@
                                     +
                        ┌────────────────────────┐
                        │ LLM Provider (tuỳ chọn)│
-                       │   Local HF / LoRA       │
-                       │    (không dùng API)     │
+                       │   OpenAI / Gemini API   │
+                       │    (tuỳ chọn)           │
                        └────────────────────────┘
 ```
 
@@ -114,7 +114,7 @@ knowledge-graph-extractor/
 │  ├─ rag.py                         # RAG pipeline: BM25 index + retrieval
 │  ├─ chat_service.py                # Điều phối chat: session, RAG, LLM, rule-based
 │  ├─ chat_memory.py                 # PostgreSQL CRUD cho lịch sử hội thoại
-│  ├─ llm_client.py                  # LLM adapter local (local_hf / local_lora)
+│  ├─ llm_client.py                  # LLM adapter cloud (OpenAI / Gemini)
 │  ├─ schemas.py                     # Pydantic schemas (request/response models)
 │  ├─ model.py                       # Load PhoBERT model state
 │  ├─ constants.py                   # Hằng số dùng chung
@@ -283,8 +283,10 @@ File `.env` đặt ở thư mục gốc của project:
 DATABASE_URL="postgresql://user:password@localhost:5432/kge"
 
 # ─── LLM Provider (tuỳ chọn) ────────────────────────────────────────────
-LLM_PROVIDER=""          # "local_hf" hoặc "local_lora" (để trống = rule-based)
-LLM_MODEL=""             # Model id hoặc đường dẫn model local
+LLM_PROVIDER=""          # "openai" hoặc "gemini" (để trống = rule-based)
+LLM_API_KEY=""           # API key cho provider
+LLM_MODEL=""             # (tuỳ chọn) model name, để trống = default theo provider
+LLM_BASE_URL=""          # (tuỳ chọn) OpenAI-compatible endpoint
 ```
 
 **Chi tiết từng biến:**
@@ -292,19 +294,23 @@ LLM_MODEL=""             # Model id hoặc đường dẫn model local
 | Biến | Bắt buộc | Mô tả |
 |---|---|---|
 | `DATABASE_URL` | Có (cho chat) | Chuỗi kết nối PostgreSQL chuẩn |
-| `LLM_PROVIDER` | Không | `local_hf` hoặc `local_lora`; nếu trống → rule-based |
-| `LLM_MODEL` | Không | Model id hoặc đường dẫn model local |
+| `LLM_PROVIDER` | Không | `openai` hoặc `gemini`; nếu trống → rule-based |
+| `LLM_API_KEY` | Không | API key cho provider |
+| `LLM_MODEL` | Không | Tên model (nếu để trống dùng default) |
+| `LLM_BASE_URL` | Không | Endpoint OpenAI-compatible (tuỳ chọn) |
 
 **Ví dụ cấu hình từng provider:**
 
 ```env
-# Local LoRA adapter
-LLM_PROVIDER=local_lora
-LLM_MODEL=./model/kge_chatbot_lora
+# OpenAI
+LLM_PROVIDER=openai
+LLM_API_KEY=your-openai-key
+LLM_MODEL=gpt-4o-mini
 
-# Hoặc Local HF model
-# LLM_PROVIDER=local_hf
-# LLM_MODEL=Qwen/Qwen2.5-3B-Instruct
+# Hoặc Gemini
+# LLM_PROVIDER=gemini
+# LLM_API_KEY=your-gemini-key
+# LLM_MODEL=gemini-1.5-flash
 ```
 
 ---
@@ -595,7 +601,7 @@ Hoạt động hoàn toàn offline, không cần API key. Hỗ trợ tiếng Vi�
 
 ### 11.2 LLM Mode
 
-Khi cấu hình `LLM_PROVIDER` + `LLM_MODEL`, chatbot gọi local LLM với:
+Khi cấu hình `LLM_PROVIDER` + `LLM_API_KEY`, chatbot gọi cloud LLM với:
 - **System prompt** chi tiết: vai trò, nguyên tắc chống hallucination, format trả lời
 - **Graph context**: danh sách entities (có degree score), relations, hub nodes, reasoning hints
 - **RAG context**: top-12 đoạn văn bản liên quan từ BM25 index
@@ -664,8 +670,8 @@ pip install -r requirements.txt
 
 ### LLM không phản hồi
 
-1. Kiểm tra `LLM_PROVIDER` và `LLM_MODEL` trong `.env`.
-2. Kiểm tra model local có tồn tại và đủ RAM/VRAM để load.
+1. Kiểm tra `LLM_PROVIDER`, `LLM_API_KEY` (và `LLM_MODEL` nếu có) trong `.env`.
+2. Kiểm tra API key còn hiệu lực và model name hợp lệ.
 3. Chat sẽ tự fallback sang rule-based nếu LLM lỗi — xem field `engine` trong response.
 
 ### Frontend không kết nối được backend
@@ -680,7 +686,7 @@ pip install -r requirements.txt
 
 - **Docker Compose** — đóng gói frontend + backend + PostgreSQL để deploy dễ dàng hơn.
 - **OCR support** — tích hợp Tesseract hoặc PaddleOCR để xử lý PDF scan ảnh.
-- **Thêm local model strategy** — mở rộng `server/llm_client.py` với provider local mới nếu cần.
+- **Thêm provider mới** — mở rộng `server/llm_client.py` cho Claude/Ollama/OpenAI-compatible endpoint khác.
 - **Export đồ thị** — thêm tính năng export sang GEXF, GraphML, hoặc PNG từ giao diện.
 - **Authentication** — thêm JWT auth để phân quyền truy cập multi-user.
 - **Tests** — bổ sung `pytest` cho backend API và Vitest cho frontend components.
@@ -705,5 +711,5 @@ pip install -r requirements.txt
 | **Link prediction** | scikit-learn (influence_predictor.joblib) |
 | **RAG** | rank-bm25 |
 | **Database** | PostgreSQL 14+, psycopg v3, psycopg_pool |
-| **LLM** | Local HuggingFace / LoRA model (tuỳ chọn) |
+| **LLM** | OpenAI / Gemini (tuỳ chọn) |
 | **Rate limiting** | SlowAPI |

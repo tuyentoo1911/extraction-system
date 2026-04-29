@@ -62,3 +62,28 @@ export interface ChatApiResponse {
 }
 
 export type TabId = 'graph' | 'entities' | 'relations' | 'highlight' | 'metrics' | 'insight' | 'chatbot' | 'json';
+
+export interface WorkspaceSessionSummary {
+  id: string;
+  title: string;
+  preview_text: string;
+  entities_count: number;
+  relations_count: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface WorkspaceSessionDetail {
+  id: string;
+  title: string;
+  input_text: string;
+  graph_data: GraphData | null;
+  metrics_data: MetricsData | null;
+  insight_markdown: string | null;
+  chat_session_id: string | null;
+  chat_engine: 'llm' | 'rule-based' | null;
+  chat_history: ChatMessage[];
+  active_tab: TabId;
+  created_at: string;
+  updated_at: string;
+}

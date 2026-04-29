@@ -1,5 +1,5 @@
 import React, { useRef, useState, useLayoutEffect } from 'react';
-import { FileText, Play, Loader2, Upload, X, FileUp, Paperclip } from 'lucide-react';
+import { Play, Loader2, X, FileUp, Paperclip } from 'lucide-react';
 import { getApiBase } from '../lib/ai';
 
 interface InputPanelProps {
@@ -35,7 +35,7 @@ export default function InputPanel({
     const el = composerRef.current;
     if (!el) return;
     el.style.height = '0px';
-    el.style.height = `${Math.min(el.scrollHeight, 180)}px`;
+    el.style.height = `${Math.min(el.scrollHeight, 96)}px`;
   };
 
   useLayoutEffect(() => {
@@ -101,12 +101,12 @@ export default function InputPanel({
       <div
         onDrop={handleDrop}
         onDragOver={(e) => e.preventDefault()}
-        className="pointer-events-auto max-w-3xl mx-auto rounded-full border border-black/15 bg-white px-4 py-2.5 flex items-center gap-2 shadow-[0_1px_4px_rgba(0,0,0,0.06)]"
+        className="pointer-events-auto max-w-xl mx-auto rounded-xl border border-black/15 bg-white px-3 py-1.5 flex items-center gap-2 shadow-[0_6px_14px_rgba(0,0,0,0.07)]"
       >
         <button
           type="button"
           onClick={() => fileInputRef.current?.click()}
-          className="h-8 w-8 rounded-full border border-black/20 hover:bg-black hover:text-white transition-colors flex items-center justify-center shrink-0"
+          className="h-7 w-7 rounded-full border border-black/20 text-black/70 hover:bg-[#f25f22] hover:text-white active:bg-black transition-colors flex items-center justify-center shrink-0"
           title="Đính kèm PDF"
         >
           {pdfLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Paperclip className="w-4 h-4" />}
@@ -116,7 +116,7 @@ export default function InputPanel({
           <button
             type="button"
             onClick={onClose}
-            className="h-8 w-8 rounded-full border border-black/20 hover:bg-black hover:text-white transition-colors flex items-center justify-center shrink-0"
+            className="h-7 w-7 rounded-full border border-black/20 text-black/70 hover:bg-[#f25f22] hover:text-white active:bg-black transition-colors flex items-center justify-center shrink-0"
             title="Đóng ô nhập"
           >
             <X className="w-4 h-4" />
@@ -140,7 +140,7 @@ export default function InputPanel({
             autosizeComposer();
           }}
           placeholder="Hỏi bất kỳ điều gì hoặc dán văn bản để trích xuất..."
-          className="flex-1 min-h-[28px] max-h-[180px] resize-none outline-none text-sm leading-6 bg-transparent placeholder:text-black/35 overflow-y-auto"
+          className="flex-1 min-h-[24px] max-h-[96px] resize-none outline-none text-[13px] leading-5 text-black bg-transparent placeholder:text-black/35 overflow-y-auto"
           rows={1}
         />
 
@@ -148,7 +148,7 @@ export default function InputPanel({
           type="button"
           onClick={onExtract}
           disabled={isProcessing || !inputText.trim()}
-          className="h-8 w-8 rounded-full bg-black text-white hover:bg-[#f25f22] disabled:opacity-50 disabled:hover:bg-black transition-colors flex items-center justify-center shrink-0"
+          className="h-7 w-7 rounded-full bg-black text-white hover:bg-[#f25f22] active:bg-black disabled:opacity-50 disabled:hover:bg-black transition-colors flex items-center justify-center shrink-0"
           title="Gửi"
         >
           {isProcessing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-3.5 h-3.5 fill-current ml-[1px]" />}

@@ -30,6 +30,14 @@ function clearStoredSession() {
 interface ChatbotViewProps {
   data: GraphData;
   inputText: string;
+  initialMessages?: ChatMessage[];
+  initialEngine?: 'llm' | 'rule-based' | null;
+  initialSessionId?: string | null;
+  onChatStateChange?: (state: {
+    messages: ChatMessage[];
+    engine: 'llm' | 'rule-based' | null;
+    sessionId: string | null;
+  }) => void;
 }
 
 function buildSuggestions(data: GraphData): string[] {
@@ -64,12 +72,19 @@ function buildSuggestions(data: GraphData): string[] {
   return suggestions;
 }
 
-export default function ChatbotView({ data, inputText }: ChatbotViewProps) {
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+export default function ChatbotView({
+  data,
+  inputText,
+  initialMessages = [],
+  initialEngine = null,
+  initialSessionId = null,
+  onChatStateChange,
+}: ChatbotViewProps) {
+  const [messages, setMessages] = useState<ChatMessage[]>(initialMessages);
   const [input, setInput] = useState('');
   const [isTyping, setIsTyping] = useState(false);
-  const [engine, setEngine] = useState<string | null>(null);
-  const sessionIdRef = useRef<string | null>(getStoredSessionId());
+  const [engine, setEngine] = useState<string | null>(initialEngine);
+  const sessionIdRef = useRef<string | null>(initialSessionId ?? getStoredSessionId());
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const suggestions = useMemo(() => buildSuggestions(data), [data]);
@@ -77,6 +92,12 @@ export default function ChatbotView({ data, inputText }: ChatbotViewProps) {
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, isTyping]);
+
+  useEffect(() => {
+    setMessages(initialMessages);
+    setEngine(initialEngine);
+    sessionIdRef.current = initialSessionId ?? null;
+  }, [initialMessages, initialEngine, initialSessionId]);
 
   const sendMessage = useCallback(async (text: string) => {
     const userMessage = text.trim();
@@ -93,21 +114,38 @@ export default function ChatbotView({ data, inputText }: ChatbotViewProps) {
         sessionIdRef.current = resp.session_id;
         storeSessionId(resp.session_id);
       }
-      setEngine(resp.engine);
-      setMessages(prev => [
+      const nextEngine = resp.engine;
+      setEngine(nextEngine);
+      setMessages(prev => {
+        const nextMessages = [
         ...prev,
         { role: 'model', content: resp.reply || 'Xin lỗi, tôi không thể trả lời câu hỏi này.' },
-      ]);
+        ];
+        onChatStateChange?.({
+          messages: nextMessages,
+          engine: nextEngine,
+          sessionId: sessionIdRef.current,
+        });
+        return nextMessages;
+      });
     } catch (error) {
       console.error('Chat error:', error);
-      setMessages(prev => [
+      setMessages(prev => {
+        const nextMessages = [
         ...prev,
         { role: 'model', content: 'Đã có lỗi xảy ra khi kết nối với AI. Vui lòng thử lại.' },
-      ]);
+        ];
+        onChatStateChange?.({
+          messages: nextMessages,
+          engine: (engine as 'llm' | 'rule-based' | null) ?? null,
+          sessionId: sessionIdRef.current,
+        });
+        return nextMessages;
+      });
     } finally {
       setIsTyping(false);
     }
-  }, [data, inputText]);
+  }, [data, inputText, onChatStateChange, engine]);
 
   const handleSend = useCallback(() => {
     sendMessage(input);
@@ -118,7 +156,8 @@ export default function ChatbotView({ data, inputText }: ChatbotViewProps) {
     clearStoredSession();
     setMessages([]);
     setEngine(null);
-  }, []);
+    onChatStateChange?.({ messages: [], engine: null, sessionId: null });
+  }, [onChatStateChange]);
 
   return (
     <div className="flex flex-col h-full bg-white">

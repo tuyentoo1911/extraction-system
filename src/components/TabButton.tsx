@@ -11,8 +11,8 @@ export default function TabButton({ active, onClick, icon, label }: TabButtonPro
   return (
     <button
       onClick={onClick}
-      className={`flex items-center gap-2 px-6 py-4 font-mono text-xs tracking-widest uppercase transition-colors border-r border-black/10
-        ${active ? 'bg-[#f4f4f0] text-black font-bold' : 'bg-white text-black/50 hover:bg-black/5 hover:text-black'}
+      className={`flex items-center gap-2 px-4 py-2.5 font-mono text-[10px] tracking-widest uppercase transition-colors border border-transparent rounded-md
+        ${active ? 'bg-black text-white border-black' : 'text-black/55 hover:bg-[#f25f22] hover:text-white active:bg-black active:text-white'}
       `}
     >
       {icon}

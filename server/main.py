@@ -46,9 +46,14 @@ from schemas import (
     InsightResponse,
     ChatRequest,
     ChatResponse,
+    SaveWorkspaceRequest,
+    SaveWorkspaceResponse,
+    WorkspaceSessionSummary,
+    WorkspaceSessionDetail,
     MAX_PDF_TEXT_LENGTH,
 )
 from chat_service import handle_chat, init_chat_db
+import workspace_memory as workspace_mem
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -166,7 +171,6 @@ def metrics(request: Request, req: MetricsRequest):
         raise HTTPException(500, detail=f"Graph metrics error: {e}")
 
 @app.post("/insight", response_model=InsightResponse)
-@limiter.limit("20/minute")
 async def insight(request: Request, req: InsightRequest):
     """Generate markdown insight from the current graph using backend analysis."""
     try:
@@ -203,7 +207,6 @@ def kb_entity(name: str, limit: int = 50):
     return {"entity": name, "total": len(triples), "triples": triples}
 
 @app.post("/chat", response_model=ChatResponse)
-@limiter.limit("30/minute")
 async def chat(request: Request, req: ChatRequest):
     """Hybrid chatbot with PostgreSQL memory and optional LLM."""
     try:
@@ -211,6 +214,89 @@ async def chat(request: Request, req: ChatRequest):
     except Exception as e:
         logger.exception("Chat error")
         raise HTTPException(500, detail=f"Chat error: {e}")
+
+
+@app.get("/workspace/sessions", response_model=list[WorkspaceSessionSummary])
+def list_workspace_sessions(limit: int = 50):
+    try:
+        rows = workspace_mem.list_workspaces(limit=limit)
+        return [
+            WorkspaceSessionSummary(
+                id=row["id"],
+                title=row["title"],
+                preview_text=row.get("preview_text") or "",
+                entities_count=int(row.get("entities_count") or 0),
+                relations_count=int(row.get("relations_count") or 0),
+                created_at=row["created_at"].isoformat(),
+                updated_at=row["updated_at"].isoformat(),
+            )
+            for row in rows
+        ]
+    except Exception as e:
+        logger.exception("Workspace list error")
+        raise HTTPException(500, detail=f"Workspace list error: {e}")
+
+
+@app.get("/workspace/sessions/{session_id}", response_model=WorkspaceSessionDetail)
+def get_workspace_session(session_id: str):
+    try:
+        row = workspace_mem.get_workspace(session_id)
+        if not row:
+            raise HTTPException(404, detail="Workspace session not found.")
+        return WorkspaceSessionDetail(
+            id=row["id"],
+            title=row["title"],
+            input_text=row.get("input_text") or "",
+            graph_data=row.get("graph_data"),
+            metrics_data=row.get("metrics_data"),
+            insight_markdown=row.get("insight_markdown"),
+            chat_session_id=row.get("chat_session_id"),
+            chat_engine=row.get("chat_engine"),
+            chat_history=row.get("chat_history") or [],
+            active_tab=row.get("active_tab") or "graph",
+            created_at=row["created_at"].isoformat(),
+            updated_at=row["updated_at"].isoformat(),
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("Workspace get error")
+        raise HTTPException(500, detail=f"Workspace get error: {e}")
+
+
+@app.post("/workspace/sessions", response_model=SaveWorkspaceResponse)
+def save_workspace_session(req: SaveWorkspaceRequest):
+    try:
+        sid = workspace_mem.save_workspace(
+            session_id=req.session_id,
+            title=req.title,
+            input_text=req.input_text,
+            graph_data=req.graph_data.model_dump() if req.graph_data else None,
+            metrics_data=req.metrics_data.model_dump() if req.metrics_data else None,
+            insight_markdown=req.insight_markdown,
+            chat_session_id=req.chat_session_id,
+            chat_engine=req.chat_engine,
+            chat_history=[turn.model_dump() for turn in req.chat_history] if req.chat_history else [],
+            active_tab=req.active_tab,
+        )
+        return SaveWorkspaceResponse(session_id=sid)
+    except Exception as e:
+        logger.exception("Workspace save error")
+        raise HTTPException(500, detail=f"Workspace save error: {e}")
+
+
+@app.delete("/workspace/sessions/{session_id}")
+def delete_workspace_session(session_id: str):
+    try:
+        deleted = workspace_mem.delete_workspace(session_id)
+        if not deleted:
+            raise HTTPException(404, detail="Workspace session not found.")
+        return {"ok": True}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("Workspace delete error")
+        raise HTTPException(500, detail=f"Workspace delete error: {e}")
 
 def _require_model():
     if not model_state.model_ready:
@@ -228,6 +314,7 @@ async def startup_event():
         loop.run_in_executor(None, load_model),
         loop.run_in_executor(None, load_kb),
         loop.run_in_executor(None, init_chat_db),
+        loop.run_in_executor(None, workspace_mem.init_workspace_db),
     )
 
 if __name__ == "__main__":

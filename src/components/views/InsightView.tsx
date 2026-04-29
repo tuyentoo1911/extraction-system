@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Play, Loader2, Lightbulb } from 'lucide-react';
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -8,20 +8,33 @@ import type { GraphData } from '../../types';
 interface InsightViewProps {
   data: GraphData;
   inputText: string;
+  initialInsight?: string | null;
+  onInsightChange?: (insight: string | null) => void;
 }
 
-export default function InsightView({ data, inputText }: InsightViewProps) {
+export default function InsightView({ data, inputText, initialInsight = null, onInsightChange }: InsightViewProps) {
   const [insight, setInsight] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    setInsight(initialInsight);
+  }, [initialInsight]);
 
   const generateInsight = async () => {
     setLoading(true);
     try {
       const text = await callInsight(inputText, data);
-      setInsight(text || 'Không có phân tích nào được tạo ra.');
+      const next = text || 'Không có phân tích nào được tạo ra.';
+      setInsight(next);
+      onInsightChange?.(next);
     } catch (err) {
       console.error(err);
-      setInsight('Có lỗi xảy ra khi tạo phân tích.');
+      const message =
+        err instanceof Error && err.message
+          ? err.message
+          : 'Có lỗi xảy ra khi tạo phân tích.';
+      setInsight(`Không thể tạo phân tích: ${message}`);
+      onInsightChange?.(`Không thể tạo phân tích: ${message}`);
     } finally {
       setLoading(false);
     }

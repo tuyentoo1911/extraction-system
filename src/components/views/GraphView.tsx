@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
-import { Database, Plus, Minus, Maximize, Eye, Edit2, Trash2 } from 'lucide-react';
+import { Orbit, Plus, Minus, Maximize, Eye, Edit2, Trash2, Zap } from 'lucide-react';
 import ForceGraph2D from 'react-force-graph-2d';
 import * as d3 from 'd3';
 import { ICON_PATHS, TYPE_COLORS, getTypeIcon } from '../../constants/graph';
@@ -135,11 +135,11 @@ export default function GraphView({ data }: GraphViewProps) {
       }
     });
 
-    fgRef.current.d3Force('collide', d3.forceCollide().radius((node: any) => node.isCentral ? 60 : (isDense ? 40 : 50)).iterations(3));
-    fgRef.current.d3Force('charge').strength(usePhysics ? (isDense ? -1500 : -1200) : 0).distanceMax(1200);
-    fgRef.current.d3Force('link').distance(isDense ? 150 : 200);
-    fgRef.current.d3Force('x', d3.forceX().strength(usePhysics ? (isDense ? 0.05 : 0.03) : 0));
-    fgRef.current.d3Force('y', d3.forceY().strength(usePhysics ? (isDense ? 0.05 : 0.03) : 0));
+    fgRef.current.d3Force('collide', d3.forceCollide().radius((node: any) => node.isCentral ? 42 : (isDense ? 24 : 30)).iterations(2));
+    fgRef.current.d3Force('charge').strength(usePhysics ? (isDense ? -560 : -460) : 0).distanceMax(700);
+    fgRef.current.d3Force('link').distance(isDense ? 75 : 100);
+    fgRef.current.d3Force('x', d3.forceX().strength(usePhysics ? (isDense ? 0.1 : 0.08) : 0));
+    fgRef.current.d3Force('y', d3.forceY().strength(usePhysics ? (isDense ? 0.1 : 0.08) : 0));
     fgRef.current.d3ReheatSimulation();
   }, [nodes, links, layoutMode, physicsEnabled]);
 
@@ -348,25 +348,35 @@ export default function GraphView({ data }: GraphViewProps) {
         />
       )}
 
-      <div className="absolute top-4 right-4 flex items-center gap-2 z-10 bg-white/80 backdrop-blur-sm p-1 border border-black/10 shadow-sm">
+      <div className="absolute top-4 right-4 flex items-center gap-1 z-10 bg-white/80 backdrop-blur-sm p-1 border border-black/10 shadow-sm">
         <button
           onClick={() => setPhysicsEnabled((v) => !v)}
-          className={`px-3 py-1.5 font-mono text-[10px] uppercase tracking-widest transition-colors border ${
+          className={`w-8 h-8 flex items-center justify-center transition-colors border ${
             physicsEnabled
               ? 'bg-black text-white border-black'
-              : 'bg-white text-black/60 border-black/20 hover:border-black hover:text-black'
+              : 'bg-white text-black/60 border-black/20 hover:bg-[#f25f22] hover:border-[#f25f22] hover:text-white active:bg-black'
           }`}
-          title="Bật/tắt mô phỏng lực"
+          title={physicsEnabled ? 'Tắt mô phỏng lực' : 'Bật mô phỏng lực'}
         >
-          Physics {physicsEnabled ? 'On' : 'Off'}
+          <Zap className="w-4 h-4" />
         </button>
-        {(['force', 'td', 'lr', 'radialout'] as const).map(mode => (
+        {([
+          { mode: 'force', title: 'Bố cục tự do', icon: <Orbit className="w-4 h-4" /> },
+          { mode: 'td', title: 'Bố cục cây dọc', glyph: '↓' },
+          { mode: 'lr', title: 'Bố cục cây ngang', glyph: '→' },
+          { mode: 'radialout', title: 'Bố cục tỏa tròn', glyph: '◎' },
+        ] as const).map(({ mode, title, icon, glyph }) => (
           <button
             key={mode}
             onClick={() => setLayoutMode(mode)}
-            className={`px-3 py-1.5 font-mono text-[10px] uppercase tracking-widest transition-colors ${layoutMode === mode ? 'bg-black text-white' : 'hover:bg-black/5 text-black/60'}`}
+            className={`w-8 h-8 flex items-center justify-center transition-colors border ${
+              layoutMode === mode
+                ? 'bg-black text-white border-black'
+                : 'bg-white text-black/60 border-black/20 hover:bg-[#f25f22] hover:border-[#f25f22] hover:text-white active:bg-black'
+            }`}
+            title={title}
           >
-            {mode === 'force' ? 'Tự do' : mode === 'td' ? 'Cây (Dọc)' : mode === 'lr' ? 'Cây (Ngang)' : 'Tỏa tròn'}
+            {icon ?? <span className="font-mono text-sm font-bold leading-none">{glyph}</span>}
           </button>
         ))}
       </div>
@@ -381,7 +391,7 @@ export default function GraphView({ data }: GraphViewProps) {
             key={title}
             onClick={onClick}
             title={title}
-            className="w-8 h-8 bg-white border border-black flex items-center justify-center hover:bg-black hover:text-white transition-colors shadow-[2px_2px_0_rgba(0,0,0,1)]"
+            className="w-8 h-8 bg-white border border-black flex items-center justify-center hover:bg-[#f25f22] hover:text-white active:bg-black transition-colors shadow-[2px_2px_0_rgba(0,0,0,1)]"
           >
             {icon}
           </button>

@@ -14,6 +14,7 @@ Rule-based engine supports 15+ intent types (Vietnamese + English):
 
 from __future__ import annotations
 
+import os
 import re
 import logging
 from collections import Counter, defaultdict
@@ -37,6 +38,10 @@ logger = logging.getLogger(__name__)
 _MAX_CONTEXT_ENTITIES = 30
 _MAX_CONTEXT_RELATIONS = 60
 _MAX_HISTORY_FOR_LLM = 10
+_PREFER_RULE_FOR_KEYWORDS = (
+    (os.getenv("CHAT_PREFER_RULE_FOR_KEYWORDS", "true")).strip().lower()
+    in {"1", "true", "yes", "y", "on"}
+)
 
 # System prompt khớp với định dạng model đã được fine-tune
 _SYSTEM_PROMPT = """\
@@ -177,34 +182,42 @@ async def handle_chat(req: ChatRequest) -> ChatResponse:
 
     _safe_add_message(session_id, "user", req.message)
 
-    history_rows = _safe_get_history(session_id)
-
-    rag_context = rag_mod.retrieve_context(
-        req.message, req.input_text, req.entities, req.relations,
-    )
-
+    history = _safe_get_history(session_id, limit=20)
     engine = "rule-based"
     reply: Optional[str] = None
 
-    if llm_client.is_configured():
+    should_prefer_rule = _should_prefer_rule_based(req.message)
+    if should_prefer_rule:
+        reply = _rule_based_reply(
+            req.message, req.entities, req.relations, req.input_text,
+        )
+        engine = "rule-based"
+    elif llm_client.is_configured():
         try:
+            rag_context = rag_mod.retrieve_context(
+                req.message, req.input_text, req.entities, req.relations,
+            )
             reply = await _call_llm(
-                history=history_rows,
-                question=req.message,
-                entities=req.entities,
-                relations=req.relations,
+                history,
+                req.message,
+                req.entities,
+                req.relations,
                 input_text=req.input_text,
                 rag_context=rag_context,
             )
             engine = "llm"
-        except Exception:
-            logger.warning("LLM call failed, falling back to rule-based.", exc_info=True)
+        except Exception as e:
+            logger.warning(
+                "LLM chat failed, falling back to rules: %s", e, exc_info=True,
+            )
 
     if reply is None:
         reply = _rule_based_reply(
             req.message, req.entities, req.relations, req.input_text,
         )
+        engine = "rule-based"
 
+    reply = _normalize_reply_text(reply)
     _safe_add_message(session_id, "model", reply)
 
     recent = _safe_get_history(session_id, limit=20)
@@ -216,6 +229,56 @@ async def handle_chat(req: ChatRequest) -> ChatResponse:
         engine=engine,
         history=turns,
     )
+
+def _should_prefer_rule_based(user_message: str) -> bool:
+    """Route keyword-heavy intents to deterministic rule-based engine."""
+    if not _PREFER_RULE_FOR_KEYWORDS:
+        return False
+
+    q = user_message.lower().strip()
+    if len(q) <= 2:
+        return False
+    q_ascii = _strip_diacritics(q)
+
+    keyword_hints = {
+        "bao nhiêu", "count", "thống kê", "statistics", "stats",
+        "tóm tắt", "tổng quan", "summary", "overview",
+        "so sánh", "compare", "vs",
+        "mối quan hệ", "relationship", "liên quan", "kết nối", "neighbors",
+        "top", "quan trọng nhất", "most connected",
+        "liệt kê", "list", "danh sách",
+        "kb", "knowledge base", "tra cứu",
+        "văn bản gốc", "source text", "trích đoạn",
+        "giúp", "help",
+    }
+    keyword_hints_ascii = {
+        "bao nhieu", "thong ke", "tom tat", "tong quan", "so sanh",
+        "moi quan he", "lien quan", "ket noi", "liet ke", "danh sach",
+        "van ban goc", "trich doan", "giup", "huong dan", "tro giup",
+        "hoi gi", "hoi duoc gi", "biet gi", "lam gi", "chuc nang",
+        "ban co the lam duoc gi", "ban lam duoc gi",
+    }
+    return (
+        any(k in q for k in keyword_hints)
+        or any(k in q_ascii for k in keyword_hints_ascii)
+    )
+
+
+def _normalize_reply_text(text: str) -> str:
+    """
+    Normalize escaped formatting tokens from LLM outputs.
+    Example: "\\n" -> newline so markdown renders correctly.
+    """
+    if not text:
+        return text
+
+    normalized = text.replace("\r\n", "\n").replace("\r", "\n")
+    # Convert common escaped control chars emitted by some models.
+    normalized = normalized.replace("\\n", "\n").replace("\\t", "\t")
+
+    # Trim trailing spaces but keep meaningful line breaks for markdown.
+    lines = [line.rstrip() for line in normalized.split("\n")]
+    return "\n".join(lines).strip()
 
 _memory_available = True
 
@@ -430,13 +493,8 @@ def _rule_based_reply(
     input_text: str = "",
 ) -> str:
     q = user_message.lower().strip()
+    q_ascii = _strip_diacritics(q)
     entity_map = {e.id: e for e in entities}
-
-    if not entities and not relations:
-        return (
-            "Đồ thị hiện tại chưa có dữ liệu. "
-            "Vui lòng nhập văn bản và nhấn **Trích xuất** trước khi hỏi đáp."
-        )
 
     greetings = {"xin chào", "chào", "hello", "hi", "hey", "xin chao"}
     if q in greetings or any(q.startswith(g) for g in greetings):
@@ -464,23 +522,18 @@ def _rule_based_reply(
 
     help_kw = {"help", "giúp", "hướng dẫn", "trợ giúp", "hỏi gì", "hỏi được gì",
                "biết gì", "làm gì", "chức năng", "capability", "what can"}
-    if any(kw in q for kw in help_kw):
+    help_kw_ascii = {
+        "giup", "huong dan", "tro giup", "hoi gi", "hoi duoc gi",
+        "biet gi", "lam gi", "chuc nang", "ban co the lam duoc gi",
+        "ban lam duoc gi",
+    }
+    if any(kw in q for kw in help_kw) or any(kw in q_ascii for kw in help_kw_ascii):
+        return _intent_help(entities, relations, entity_map)
+
+    if not entities and not relations:
         return (
-            "## Tôi có thể trả lời\n\n"
-            "| Dạng câu hỏi | Ví dụ |\n"
-            "|---|---|\n"
-            '| Thông tin thực thể | "Cho tôi biết về Vingroup" |\n'
-            '| Đếm / thống kê | "Có bao nhiêu tổ chức?" |\n'
-            '| Danh sách theo loại | "Liệt kê người", "Danh sách sự kiện" |\n'
-            '| Quan hệ giữa A và B | "Mối quan hệ giữa Vingroup và VinFast" |\n'
-            '| Các kết nối của X | "Vingroup kết nối với gì?" |\n'
-            '| So sánh A và B | "So sánh Vingroup và FPT" |\n'
-            '| Thực thể quan trọng nhất | "Node quan trọng nhất", "Top 5" |\n'
-            '| Lọc quan hệ theo loại | "Những ai đầu tư?", "Quan hệ hợp tác" |\n'
-            '| Tóm tắt đồ thị | "Tóm tắt", "Tổng quan" |\n'
-            '| Quan hệ dự đoán | "Có quan hệ dự đoán nào?" |\n'
-            '| Tra cứu Knowledge Base | "KB biết gì về Hà Nội?" |\n'
-            '| Trích đoạn văn bản gốc | "Văn bản gốc nói gì về X?" |\n'
+            "Đồ thị hiện tại chưa có dữ liệu. "
+            "Vui lòng nhập văn bản và nhấn **Trích xuất** trước khi hỏi đáp."
         )
 
     summary_kw = {"tóm tắt", "tổng quan", "overview", "summary", "summar",
@@ -573,7 +626,11 @@ def _rule_based_reply(
 
     count_kw = {"bao nhiêu", "how many", "count", "total", "tổng",
                 "đếm", "số lượng", "thống kê", "statistics", "stats"}
-    if any(kw in q for kw in count_kw):
+    count_kw_ascii = {
+        "bao nhieu", "co bao nhieu", "tong so", "so luong", "thong ke",
+        "number of", "how many",
+    }
+    if any(kw in q for kw in count_kw) or any(kw in q_ascii for kw in count_kw_ascii):
         return _intent_count(q, entities, relations)
 
     type_keywords: dict[str, list[str]] = {
@@ -593,9 +650,10 @@ def _rule_based_reply(
             if match:
                 return match
 
-    rel_kw = {"relation", "link", "quan hệ", "liên kết", "kết nối",
-              "mối quan hệ", "edge", "connection", "cạnh"}
-    if any(kw in q for kw in rel_kw):
+    rel_kw_vi = {"quan hệ", "liên kết", "kết nối", "mối quan hệ", "cạnh"}
+    rel_kw_en_tokens = {"relation", "link", "edge", "connection"}
+    en_tokens = set(re.findall(r"[a-z]+", q_ascii))
+    if any(kw in q for kw in rel_kw_vi) or bool(rel_kw_en_tokens & en_tokens):
         return _intent_relations_list(relations, entity_map)
 
     matched = _fuzzy_find_entity(q, entities)
@@ -651,6 +709,57 @@ def _intent_summary(entities: list[Entity], relations: list[Relation]) -> str:
         f"| Nhãn | Số lượng |\n|---|---|\n{rel_table}\n\n"
         f"### Thực thể trung tâm\n{top3_text}"
     )
+
+def _intent_help(
+    entities: list[Entity],
+    relations: list[Relation],
+    entity_map: dict[str, Entity],
+) -> str:
+    """Suggest concrete, data-aware follow-up questions."""
+    suggestions: list[str] = [
+        "Tóm tắt đồ thị hiện tại",
+        "Có bao nhiêu thực thể và quan hệ?",
+        "Top 5 thực thể quan trọng nhất",
+        "Liệt kê tất cả loại thực thể",
+        "Liệt kê các quan hệ phổ biến",
+    ]
+
+    if entities:
+        top_entities = sorted(
+            entities, key=lambda e: len(_entity_rels(e.id, relations)), reverse=True,
+        )[:3]
+        for e in top_entities:
+            suggestions.append(f"Cho tôi biết về {e.name}")
+            suggestions.append(f"{e.name} kết nối với gì?")
+
+    if len(entities) >= 2:
+        a, b = entities[0], entities[1]
+        suggestions.append(f"Mối quan hệ giữa {a.name} và {b.name} là gì?")
+        suggestions.append(f"So sánh {a.name} và {b.name}")
+
+    if any(r.isPredicted for r in relations):
+        suggestions.append("Có quan hệ dự đoán nào?")
+
+    # Remove duplicates but preserve order.
+    seen: set[str] = set()
+    unique_suggestions: list[str] = []
+    for s in suggestions:
+        if s not in seen:
+            seen.add(s)
+            unique_suggestions.append(s)
+
+    lines = [
+        "## Tôi có thể giúp bạn hỏi đáp về đồ thị",
+        "",
+        f"- Hiện có **{len(entities)}** thực thể và **{len(relations)}** quan hệ trong phiên này.",
+        "- Bạn có thể thử các câu hỏi sau:",
+    ]
+    lines.extend(f'  - "{q}"' for q in unique_suggestions[:12])
+    lines.extend([
+        "",
+        "Nếu muốn, bạn cứ hỏi tự nhiên bằng tiếng Việt hoặc tiếng Anh, tôi sẽ tự nhận diện intent.",
+    ])
+    return "\n".join(lines)
 
 def _intent_path(
     name_a: str, name_b: str,

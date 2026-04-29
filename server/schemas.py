@@ -129,3 +129,45 @@ class ChatResponse(BaseModel):
         default_factory=list,
         description="Recent conversation turns (newest last).",
     )
+
+
+class WorkspaceSessionSummary(BaseModel):
+    id: str
+    title: str
+    preview_text: str = ""
+    entities_count: int = 0
+    relations_count: int = 0
+    created_at: str
+    updated_at: str
+
+
+class SaveWorkspaceRequest(BaseModel):
+    session_id: Optional[str] = Field(default=None, max_length=64)
+    title: Optional[str] = Field(default=None, max_length=120)
+    input_text: str = Field(default="", max_length=MAX_PDF_TEXT_LENGTH)
+    graph_data: Optional[GraphData] = None
+    metrics_data: Optional[MetricsResponse] = None
+    insight_markdown: Optional[str] = Field(default=None, max_length=200_000)
+    chat_session_id: Optional[str] = Field(default=None, max_length=64)
+    chat_engine: Optional[str] = Field(default=None, max_length=32)
+    chat_history: list[ChatTurn] = Field(default_factory=list, max_length=MAX_CHAT_HISTORY_TURNS)
+    active_tab: str = Field(default="graph", max_length=24)
+
+
+class SaveWorkspaceResponse(BaseModel):
+    session_id: str
+
+
+class WorkspaceSessionDetail(BaseModel):
+    id: str
+    title: str
+    input_text: str
+    graph_data: Optional[GraphData] = None
+    metrics_data: Optional[MetricsResponse] = None
+    insight_markdown: Optional[str] = None
+    chat_session_id: Optional[str] = None
+    chat_engine: Optional[str] = None
+    chat_history: list[ChatTurn] = Field(default_factory=list)
+    active_tab: str = "graph"
+    created_at: str
+    updated_at: str

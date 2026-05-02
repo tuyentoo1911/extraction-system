@@ -162,13 +162,44 @@ export async function callInsight(
   return responsePayload.insight_markdown as string;
 }
 
+/** Compact metrics text for chat / RAG (keep under server max length). */
+export function formatMetricsSummaryForChat(m: MetricsData): string {
+  const g = m.global_metrics;
+  const lines: string[] = [
+    `Global: nodes=${g.node_count} edges=${g.edge_count} density=${g.density.toFixed(4)} avg_degree=${g.avg_degree.toFixed(2)} connected_components=${g.connected_components}`,
+  ];
+  const row = (n: MetricsData['node_metrics'][number]) =>
+    `${n.name} (${n.type}): degree=${n.degree} deg_cent=${n.degree_centrality.toFixed(4)} betw=${n.betweenness_centrality.toFixed(4)} close=${n.closeness_centrality.toFixed(4)} pr=${n.pagerank.toFixed(4)}`;
+
+  const pushTop = (title: string, arr: MetricsData['top_degree']) => {
+    if (!arr?.length) return;
+    lines.push(`${title}:`);
+    arr.slice(0, 12).forEach((n, i) => lines.push(`  ${i + 1}. ${row(n)}`));
+  };
+
+  pushTop('Top degree', m.top_degree);
+  pushTop('Top PageRank', m.top_pagerank);
+  pushTop('Top betweenness', m.top_betweenness);
+
+  return lines.join('\n');
+}
+
 export async function callChat(
   sessionId: string | null,
   userMessage: string,
   data: GraphData,
   inputText: string,
+  options?: {
+    insightMarkdown?: string | null;
+    metricsData?: MetricsData | null;
+  },
 ): Promise<ChatApiResponse> {
   const apiBase = await resolveApiBase();
+
+  const insightMarkdown =
+    typeof options?.insightMarkdown === 'string' ? options.insightMarkdown.slice(0, 200_000) : '';
+  const metricsSummary =
+    options?.metricsData != null ? formatMetricsSummaryForChat(options.metricsData).slice(0, 80_000) : '';
 
   const res = await fetch(`${apiBase}/chat`, {
     method: 'POST',
@@ -179,6 +210,8 @@ export async function callChat(
       entities: data.entities,
       relations: data.relations,
       input_text: inputText,
+      insight_markdown: insightMarkdown,
+      metrics_summary: metricsSummary,
     }),
   });
 
@@ -218,7 +251,7 @@ export async function saveWorkspaceSession(params: {
   metricsData: MetricsData | null;
   insightMarkdown?: string | null;
   chatSessionId?: string | null;
-  chatEngine?: 'llm' | 'rule-based' | null;
+  chatEngine?: 'ollama' | 'local' | 'llm' | 'rule-based' | null;
   chatHistory?: ChatMessage[];
   activeTab: TabId;
 }): Promise<string> {

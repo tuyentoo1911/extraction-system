@@ -57,8 +57,14 @@ export type ChatMessage = {
 export interface ChatApiResponse {
   session_id: string;
   reply: string;
-  engine: 'llm' | 'rule-based';
+  engine: 'ollama' | 'local' | 'llm' | 'rule-based';
   history: ChatMessage[];
+  /** Heuristic confidence score 0-1 based on answer grounding */
+  confidence?: number;
+  /** Number of context items that support the answer */
+  evidence_count?: number;
+  /** Parsed intent of the query */
+  intent?: string;
 }
 
 export type TabId = 'graph' | 'entities' | 'relations' | 'highlight' | 'metrics' | 'insight' | 'chatbot' | 'json';
@@ -81,7 +87,7 @@ export interface WorkspaceSessionDetail {
   metrics_data: MetricsData | null;
   insight_markdown: string | null;
   chat_session_id: string | null;
-  chat_engine: 'llm' | 'rule-based' | null;
+  chat_engine: 'ollama' | 'local' | 'llm' | 'rule-based' | null;
   chat_history: ChatMessage[];
   active_tab: TabId;
   created_at: string;

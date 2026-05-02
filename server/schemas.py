@@ -113,6 +113,16 @@ class ChatRequest(BaseModel):
     entities: list[Entity] = Field(default_factory=list, max_length=500)
     relations: list[Relation] = Field(default_factory=list, max_length=5000)
     input_text: str = Field(default="", max_length=MAX_TEXT_LENGTH)
+    insight_markdown: str = Field(
+        default="",
+        max_length=200_000,
+        description="Optional Insight tab markdown report (same workspace session).",
+    )
+    metrics_summary: str = Field(
+        default="",
+        max_length=80_000,
+        description="Optional compact metrics summary text from Metrics tab.",
+    )
 
     @field_validator("message")
     @classmethod
@@ -124,10 +134,23 @@ class ChatRequest(BaseModel):
 class ChatResponse(BaseModel):
     session_id: str
     reply: str
-    engine: str = Field(description="'llm' or 'rule-based'")
+    engine: str = Field(description="'ollama' | 'local' | 'rule-based'")
     history: list[ChatTurn] = Field(
         default_factory=list,
         description="Recent conversation turns (newest last).",
+    )
+    # ── New fields for quality observability ─────────────────────────────────
+    confidence: float = Field(
+        default=0.0,
+        description="Heuristic confidence score 0-1 based on answer grounding.",
+    )
+    evidence_count: int = Field(
+        default=0,
+        description="Number of context items that support the answer.",
+    )
+    intent: str = Field(
+        default="",
+        description="Parsed query intent (relationship/count/summary/…).",
     )
 
 

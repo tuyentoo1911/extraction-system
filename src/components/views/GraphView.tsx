@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
-import { Orbit, Plus, Minus, Maximize, Eye, Edit2, Trash2, Zap } from 'lucide-react';
+import { Orbit, Plus, Minus, Maximize, Eye, Edit2, Trash2, Zap, Database } from 'lucide-react';
 import ForceGraph2D from 'react-force-graph-2d';
 import * as d3 from 'd3';
 import { ICON_PATHS, TYPE_COLORS, getTypeIcon } from '../../constants/graph';

@@ -16,6 +16,8 @@ from __future__ import annotations
 
 import os
 import re
+import time
+import uuid
 import logging
 from collections import Counter, defaultdict
 from difflib import SequenceMatcher
@@ -25,6 +27,10 @@ import chat_memory as mem
 import llm_client
 import knowledge_base as kb
 import rag as rag_mod
+from query_understanding import parse_query, ParsedQuery, MODE_DETERMINISTIC
+from graph_retriever import hybrid_retrieve
+from context_filter import filter_context, format_context_for_llm
+from answer_validator import validate_answer, should_replace_with_no_data, NO_DATA_REPLY
 from schemas import (
     ChatRequest,
     ChatResponse,
@@ -43,6 +49,13 @@ _PREFER_RULE_FOR_KEYWORDS = (
     in {"1", "true", "yes", "y", "on"}
 )
 
+# Engine tag shown in response — derived from LLM_PROVIDER env at runtime
+def _get_engine_tag() -> str:
+    provider = (os.getenv("LLM_PROVIDER") or "").strip().lower()
+    return provider if provider in ("ollama", "local") else "llm"
+
+_PROVIDER_ENGINE_TAG = _get_engine_tag()
+
 # System prompt khớp với định dạng model đã được fine-tune
 _SYSTEM_PROMPT = """\
 Bạn là AI Chatbot của hệ thống Knowledge Graph Extractor.
@@ -51,7 +64,8 @@ Bạn có quyền truy cập vào:
 1. Knowledge Graph (thực thể và quan hệ)
 2. Knowledge Base (các triple)
 3. Văn bản gốc (input text)
-4. Ngữ cảnh truy xuất (RAG context)
+4. Ngữ cảnh truy xuất (RAG context — có thể gồm Insight / Metrics)
+5. Báo cáo Insight và tóm tắt Metrics (nếu được đính kèm)
 
 NHIỆM VỤ:
 - Trả lời câu hỏi của người dùng dựa hoàn toàn trên dữ liệu được cung cấp trong context.
@@ -62,7 +76,7 @@ QUY TẮC QUAN TRỌNG:
 - KHÔNG được bịa thông tin.
 - KHÔNG suy đoán ngoài dữ liệu.
 - Nếu không có thông tin -> trả lời: "Không tìm thấy thông tin trong dữ liệu."
-- Ưu tiên: (1) Quan hệ trực tiếp → (2) Quan hệ gián tiếp → (3) Knowledge Base → (4) Văn bản gốc
+- Ưu tiên: (1) Quan hệ trực tiếp → (2) Quan hệ gián tiếp → (3) Knowledge Base → (4) Insight/Metrics → (5) Văn bản gốc
 
 CÁCH TRẢ LỜI:
 - Nếu là quan hệ: [Thực thể A] --(quan hệ)--> [Thực thể B]
@@ -178,56 +192,130 @@ def init_chat_db() -> None:
         logger.warning("Chat memory DB not available — chat will still work without persistence.", exc_info=True)
 
 async def handle_chat(req: ChatRequest) -> ChatResponse:
+    request_id = uuid.uuid4().hex[:8]
+    t_start    = time.monotonic()
+
+    # ── 1. Session management ──────────────────────────────────────────────────
     session_id = _safe_ensure_session(req.session_id)
 
+    # Load history BEFORE adding current message (needed for follow-up detection)
+    history = _safe_get_history(session_id, limit=20)
     _safe_add_message(session_id, "user", req.message)
 
-    history = _safe_get_history(session_id, limit=20)
-    engine = "rule-based"
+    # ── 2. Query Understanding ─────────────────────────────────────────────────
+    pq = parse_query(req.message, req.entities, req.relations, history)
+    logger.info(
+        "[%s] intent=%s mode=%s entities=%s followup=%s",
+        request_id, pq.intent, pq.mode, pq.entities_mentioned, pq.is_followup,
+    )
+
+    engine        = "rule-based"
     reply: Optional[str] = None
+    confidence    = 0.0
+    evidence_count = 0
 
-    should_prefer_rule = _should_prefer_rule_based(req.message)
-    if should_prefer_rule:
-        reply = _rule_based_reply(
+    # ── 3. Deterministic intents → rule-based directly (no LLM needed) ────────
+    if pq.is_deterministic() or not llm_client.is_configured():
+        reply  = _rule_based_reply(
             req.message, req.entities, req.relations, req.input_text,
+            insight_markdown=req.insight_markdown or "",
+            metrics_summary=req.metrics_summary or "",
         )
         engine = "rule-based"
-    elif llm_client.is_configured():
+        # Rule-based answers are grounded by definition
+        confidence     = 0.9 if reply and len(reply) > 20 else 0.5
+        evidence_count = len(pq.entities_mentioned)
+
+    # ── 4. LLM path: hybrid retrieve → filter → LLM → validate ───────────────
+    else:
+        t_retrieve = time.monotonic()
+        scored_docs  = hybrid_retrieve(
+            pq, req.input_text, req.entities, req.relations,
+            insight_markdown=req.insight_markdown or "",
+            metrics_summary=req.metrics_summary or "",
+        )
+        filtered_docs = filter_context(scored_docs, pq)
+        context_str  = format_context_for_llm(filtered_docs)
+        t_retrieve_ms = int((time.monotonic() - t_retrieve) * 1000)
+
+        logger.info(
+            "[%s] retrieve=%dms scored=%d filtered=%d context_chars=%d",
+            request_id, t_retrieve_ms, len(scored_docs), len(filtered_docs), len(context_str),
+        )
+
         try:
-            rag_context = rag_mod.retrieve_context(
-                req.message, req.input_text, req.entities, req.relations,
-            )
-            reply = await _call_llm(
-                history,
-                req.message,
-                req.entities,
-                req.relations,
+            t_llm = time.monotonic()
+            reply = await _call_llm_with_context(
+                history=history,
+                question=req.message,
+                entities=req.entities,
+                relations=req.relations,
                 input_text=req.input_text,
-                rag_context=rag_context,
+                context_str=context_str,
+                insight_markdown=req.insight_markdown or "",
+                metrics_summary=req.metrics_summary or "",
             )
-            engine = "llm"
-        except Exception as e:
-            logger.warning(
-                "LLM chat failed, falling back to rules: %s", e, exc_info=True,
+            t_llm_ms = int((time.monotonic() - t_llm) * 1000)
+            engine   = _PROVIDER_ENGINE_TAG
+
+            # ── 5. Answer validation ──────────────────────────────────────────
+            v_result = validate_answer(reply, filtered_docs, pq.entities_mentioned)
+            confidence     = v_result.confidence
+            evidence_count = v_result.evidence_count
+
+            logger.info(
+                "[%s] llm=%dms engine=%s valid=%s confidence=%.2f evidence=%d reason=%s",
+                request_id, t_llm_ms, engine,
+                v_result.passed, confidence, evidence_count, v_result.reason,
             )
 
+            if v_result.speculation_flags:
+                logger.debug("[%s] speculation flags: %s", request_id, v_result.speculation_flags)
+
+            if should_replace_with_no_data(v_result):
+                logger.warning(
+                    "[%s] Answer rejected (low_grounding, evidence=0) → no-data reply",
+                    request_id,
+                )
+                reply          = NO_DATA_REPLY
+                confidence     = 0.1
+                evidence_count = 0
+
+        except Exception as exc:
+            logger.warning("[%s] LLM failed, falling back to rule-based: %s", request_id, exc)
+
+    # ── 6. Fallback to rule-based if LLM path produced nothing ────────────────
     if reply is None:
-        reply = _rule_based_reply(
+        reply          = _rule_based_reply(
             req.message, req.entities, req.relations, req.input_text,
+            insight_markdown=req.insight_markdown or "",
+            metrics_summary=req.metrics_summary or "",
         )
-        engine = "rule-based"
+        engine         = "rule-based"
+        confidence     = 0.9 if reply and len(reply) > 20 else 0.5
+        evidence_count = len(pq.entities_mentioned)
 
+    # ── 7. Persist & return ───────────────────────────────────────────────────
     reply = _normalize_reply_text(reply)
     _safe_add_message(session_id, "model", reply)
 
     recent = _safe_get_history(session_id, limit=20)
-    turns = [ChatTurn(role=r["role"], content=r["content"]) for r in recent]
+    turns  = [ChatTurn(role=r["role"], content=r["content"]) for r in recent]
+
+    t_total_ms = int((time.monotonic() - t_start) * 1000)
+    logger.info(
+        "[%s] DONE total=%dms engine=%s confidence=%.2f",
+        request_id, t_total_ms, engine, confidence,
+    )
 
     return ChatResponse(
         session_id=session_id,
         reply=reply,
         engine=engine,
         history=turns,
+        confidence=round(confidence, 3),
+        evidence_count=evidence_count,
+        intent=pq.intent,
     )
 
 def _should_prefer_rule_based(user_message: str) -> bool:
@@ -374,22 +462,119 @@ async def _call_llm(
     input_text: str = "",
     rag_context: str = "",
 ) -> str:
-    # Build the structured user message the model was trained on
+    """Legacy LLM caller — kept for backward compatibility."""
     structured_user_msg = _build_structured_user_msg(
         question, entities, relations, rag_context, input_text
     )
-
-    # Past turns (exclude the current user turn which is last in history)
     msgs: list[dict[str, str]] = []
     past_history = history[-(_MAX_HISTORY_FOR_LLM * 2 + 1):-1]
     for row in past_history:
         role = "assistant" if row["role"] == "model" else row["role"]
         msgs.append({"role": role, "content": row["content"]})
-
-    # Current user turn with full structured context
     msgs.append({"role": "user", "content": structured_user_msg})
-
     return await llm_client.generate(_SYSTEM_PROMPT, msgs)
+
+
+def _prompt_snippet(text: str, max_chars: int) -> str:
+    s = (text or "").strip()
+    if not s:
+        return ""
+    if len(s) <= max_chars:
+        return s
+    cut = s[:max_chars]
+    if "\n" in cut:
+        cut = cut.rsplit("\n", 1)[0]
+    return cut + "\n..."
+
+
+async def _call_llm_with_context(
+    history: list[dict],
+    question: str,
+    entities: list[Entity],
+    relations: list[Relation],
+    input_text: str = "",
+    context_str: str = "",
+    insight_markdown: str = "",
+    metrics_summary: str = "",
+) -> str:
+    """
+    New LLM caller using the pre-filtered hybrid context string.
+    Passes recent history for follow-up continuity (up to _MAX_HISTORY_FOR_LLM turns).
+    """
+    kg_text      = _compact_kg(entities, relations)
+    text_snippet = (input_text[:300] + "...") if len(input_text) > 300 else input_text
+
+    insight_excerpt = _prompt_snippet(insight_markdown, 2800)
+    metrics_excerpt = _prompt_snippet(metrics_summary, 2000)
+
+    user_msg = (
+        f"Question:\n{question}\n\n"
+        f"Knowledge Graph:\n{kg_text}\n\n"
+        f"Context:\n{context_str or '(none)'}\n\n"
+        f"Input Text:\n{text_snippet or '(none)'}\n\n"
+        f"Insight report (excerpt, optional):\n{insight_excerpt or '(none)'}\n\n"
+        f"Metrics summary (optional):\n{metrics_excerpt or '(none)'}"
+    )
+
+    msgs: list[dict[str, str]] = []
+    # Include recent history for follow-up awareness (skip the current user turn at end)
+    past_history = history[-(_MAX_HISTORY_FOR_LLM * 2 + 1):-1]
+    for row in past_history:
+        role = "assistant" if row["role"] == "model" else row["role"]
+        msgs.append({"role": role, "content": row["content"]})
+    msgs.append({"role": "user", "content": user_msg})
+
+    ollama_timeout = float(os.getenv("OLLAMA_TIMEOUT") or "60")
+    first = await llm_client.generate(_SYSTEM_PROMPT, msgs, timeout=ollama_timeout)
+
+    # One-shot continuation for truncated answers.
+    if _looks_truncated_reply(first):
+        continue_msgs = [
+            *msgs,
+            {"role": "assistant", "content": first},
+            {
+                "role": "user",
+                "content": (
+                    "Tiếp tục phần trả lời còn dang dở ngay từ chỗ trước đó. "
+                    "Không lặp lại nội dung đã viết."
+                ),
+            },
+        ]
+        try:
+            cont = await llm_client.generate(
+                _SYSTEM_PROMPT,
+                continue_msgs,
+                timeout=ollama_timeout,
+            )
+            cont = (cont or "").strip()
+            if cont:
+                return f"{first.rstrip()}\n{cont}"
+        except Exception:
+            # Ignore continuation failure and keep first answer.
+            pass
+
+    return first
+
+
+def _looks_truncated_reply(text: str) -> bool:
+    """
+    Heuristic detector for incomplete model replies.
+    """
+    if not text:
+        return False
+    t = text.strip()
+    if len(t) < 80:
+        return False
+    if t.endswith((":", "-", "•", ",")):
+        return True
+    if t.endswith(("**", "`", "(", "[", "{")):
+        return True
+    if t.lower().endswith(("thực thể", "kết luận", "tổng kết")):
+        return True
+    # No sentence-ending punctuation in a long response often means cutoff.
+    if len(t) > 250 and t[-1] not in (".", "!", "?", "\"", "”", "`"):
+        return True
+    return False
 
 _FUZZY_THRESHOLD = 0.50
 
@@ -491,6 +676,8 @@ def _rule_based_reply(
     entities: list[Entity],
     relations: list[Relation],
     input_text: str = "",
+    insight_markdown: str = "",
+    metrics_summary: str = "",
 ) -> str:
     q = user_message.lower().strip()
     q_ascii = _strip_diacritics(q)
@@ -674,7 +861,10 @@ def _rule_based_reply(
         return card + kb_extra
 
     rag_docs = rag_mod.retrieve_for_rule_based(
-        user_message, input_text, entities, relations, top_k=5,
+        user_message, input_text, entities, relations,
+        insight_markdown=insight_markdown,
+        metrics_summary=metrics_summary,
+        top_k=5,
     )
     if rag_docs:
         return _intent_rag_fallback(user_message, rag_docs, entities, relations, entity_map)
@@ -1083,11 +1273,25 @@ def _intent_rag_fallback(
     entity_docs = [d for d in docs if d.source == "entity"]
     rel_docs = [d for d in docs if d.source == "relation"]
     kb_docs = [d for d in docs if d.source == "kb_triple"]
+    insight_docs = [d for d in docs if d.source == "insight"]
+    metrics_docs = [d for d in docs if d.source == "metrics"]
 
     if text_chunks:
         lines.append(" **Đoạn văn bản liên quan:**")
         for d in text_chunks[:3]:
             lines.append(f"> {d.text[:300]}")
+        lines.append("")
+
+    if insight_docs:
+        lines.append(" **Insight (trích đoạn):**")
+        for d in insight_docs[:4]:
+            lines.append(f"> {d.text[:350]}")
+        lines.append("")
+
+    if metrics_docs:
+        lines.append(" **Metrics:**")
+        for d in metrics_docs[:4]:
+            lines.append(f"- {d.text[:400]}")
         lines.append("")
 
     if entity_docs:
@@ -1110,7 +1314,7 @@ def _intent_rag_fallback(
             lines.append(f"- {d.text}")
         lines.append("")
 
-    if not any([text_chunks, entity_docs, rel_docs, kb_docs]):
+    if not any([text_chunks, insight_docs, metrics_docs, entity_docs, rel_docs, kb_docs]):
         return _intent_smart_fallback(question.lower(), entities, relations, entity_map)
 
     lines.append(" _Hãy hỏi cụ thể hơn để tôi trả lời chính xác hơn._")

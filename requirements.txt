@@ -13,4 +13,5 @@ psycopg[binary]>=3.1.0
 psycopg_pool>=3.1.0
 python-dotenv>=1.0.0
 rank-bm25>=0.2.2
+httpx>=0.27.0
 # bitsandbytes>=0.43.0  # tuỳ chọn: bật nếu dùng LLM_LOAD_IN_4BIT=true (yêu cầu CUDA GPU)

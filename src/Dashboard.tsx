@@ -30,11 +30,11 @@ export default function Dashboard({ onBack }: { onBack: () => void }) {
   const [historyMenuId, setHistoryMenuId] = useState<string | null>(null);
   const [insightMarkdown, setInsightMarkdown] = useState<string | null>(null);
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
-  const [chatEngine, setChatEngine] = useState<'llm' | 'rule-based' | null>(null);
+  const [chatEngine, setChatEngine] = useState<'ollama' | 'local' | 'llm' | 'rule-based' | null>(null);
   const [chatSessionId, setChatSessionId] = useState<string | null>(null);
   const insightRef = useRef<string | null>(null);
   const chatMessagesRef = useRef<ChatMessage[]>([]);
-  const chatEngineRef = useRef<'llm' | 'rule-based' | null>(null);
+  const chatEngineRef = useRef<'ollama' | 'local' | 'llm' | 'rule-based' | null>(null);
   const chatSessionIdRef = useRef<string | null>(null);
 
   const refreshHistory = useCallback(async () => {
@@ -57,7 +57,7 @@ export default function Dashboard({ onBack }: { onBack: () => void }) {
     title?: string;
     insightMarkdown?: string | null;
     chatSessionId?: string | null;
-    chatEngine?: 'llm' | 'rule-based' | null;
+    chatEngine?: 'ollama' | 'local' | 'llm' | 'rule-based' | null;
     chatHistory?: ChatMessage[];
   }) => {
     const id = await saveWorkspaceSession({
@@ -317,7 +317,7 @@ export default function Dashboard({ onBack }: { onBack: () => void }) {
 
   const handleChatStateChange = useCallback((next: {
     messages: ChatMessage[];
-    engine: 'llm' | 'rule-based' | null;
+    engine: 'ollama' | 'local' | 'llm' | 'rule-based' | null;
     sessionId: string | null;
   }) => {
     chatMessagesRef.current = next.messages;
@@ -507,6 +507,8 @@ export default function Dashboard({ onBack }: { onBack: () => void }) {
                   <ChatbotView
                     data={graphData}
                     inputText={inputText}
+                    insightMarkdown={insightMarkdown}
+                    metricsData={metricsData}
                     initialMessages={chatMessages}
                     initialEngine={chatEngine}
                     initialSessionId={chatSessionId}

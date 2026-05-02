@@ -3,7 +3,7 @@ import { Loader2, MessageSquare, RotateCcw, Send } from 'lucide-react';
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { callChat } from '../../lib/ai';
-import type { ChatMessage, GraphData } from '../../types';
+import type { ChatMessage, GraphData, MetricsData } from '../../types';
 
 const SESSION_KEY = 'kge_chat_session_id';
 
@@ -27,15 +27,21 @@ function clearStoredSession() {
   } catch {  }
 }
 
+type ChatEngine = 'ollama' | 'local' | 'llm' | 'rule-based' | null;
+
 interface ChatbotViewProps {
   data: GraphData;
   inputText: string;
+  /** Latest Insight markdown from Insight tab (sent with each chat request). */
+  insightMarkdown?: string | null;
+  /** Cached metrics from Metrics tab (compact summary sent to chat API). */
+  metricsData?: MetricsData | null;
   initialMessages?: ChatMessage[];
-  initialEngine?: 'llm' | 'rule-based' | null;
+  initialEngine?: ChatEngine;
   initialSessionId?: string | null;
   onChatStateChange?: (state: {
     messages: ChatMessage[];
-    engine: 'llm' | 'rule-based' | null;
+    engine: ChatEngine;
     sessionId: string | null;
   }) => void;
 }
@@ -75,6 +81,8 @@ function buildSuggestions(data: GraphData): string[] {
 export default function ChatbotView({
   data,
   inputText,
+  insightMarkdown = null,
+  metricsData = null,
   initialMessages = [],
   initialEngine = null,
   initialSessionId = null,
@@ -83,7 +91,9 @@ export default function ChatbotView({
   const [messages, setMessages] = useState<ChatMessage[]>(initialMessages);
   const [input, setInput] = useState('');
   const [isTyping, setIsTyping] = useState(false);
-  const [engine, setEngine] = useState<string | null>(initialEngine);
+  const [engine, setEngine] = useState<ChatEngine>(initialEngine);
+  const [lastConfidence, setLastConfidence] = useState<number | null>(null);
+  const [lastIntent, setLastIntent] = useState<string | null>(null);
   const sessionIdRef = useRef<string | null>(initialSessionId ?? getStoredSessionId());
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -108,14 +118,19 @@ export default function ChatbotView({
     setIsTyping(true);
 
     try {
-      const resp = await callChat(sessionIdRef.current, userMessage, data, inputText);
+      const resp = await callChat(sessionIdRef.current, userMessage, data, inputText, {
+        insightMarkdown,
+        metricsData,
+      });
 
       if (resp.session_id) {
         sessionIdRef.current = resp.session_id;
         storeSessionId(resp.session_id);
       }
-      const nextEngine = resp.engine;
+      const nextEngine = resp.engine as ChatEngine;
       setEngine(nextEngine);
+      if (resp.confidence !== undefined) setLastConfidence(resp.confidence);
+      if (resp.intent) setLastIntent(resp.intent);
       setMessages(prev => {
         const nextMessages = [
         ...prev,
@@ -137,7 +152,7 @@ export default function ChatbotView({
         ];
         onChatStateChange?.({
           messages: nextMessages,
-          engine: (engine as 'llm' | 'rule-based' | null) ?? null,
+          engine: engine ?? null,
           sessionId: sessionIdRef.current,
         });
         return nextMessages;
@@ -145,7 +160,7 @@ export default function ChatbotView({
     } finally {
       setIsTyping(false);
     }
-  }, [data, inputText, onChatStateChange, engine]);
+  }, [data, inputText, insightMarkdown, metricsData, onChatStateChange, engine]);
 
   const handleSend = useCallback(() => {
     sendMessage(input);
@@ -162,10 +177,32 @@ export default function ChatbotView({
   return (
     <div className="flex flex-col h-full bg-white">
       <div className="flex items-center justify-between px-6 py-2 border-b border-black/10 bg-[#f4f4f0]">
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-3">
           <span className="font-mono text-[10px] uppercase tracking-widest text-black/50">
-            {engine === 'llm' ? 'LLM mode' : 'Rule-based mode'}
+            {engine === 'ollama' ? 'Ollama'
+              : engine === 'local' ? 'Local LLM'
+              : engine === 'llm' ? 'LLM'
+              : 'Rule-based'}
           </span>
+          {lastIntent && (
+            <span className="font-mono text-[9px] px-1.5 py-0.5 rounded bg-black/5 text-black/40 uppercase tracking-wider">
+              {lastIntent}
+            </span>
+          )}
+          {lastConfidence !== null && engine !== 'rule-based' && (
+            <span
+              className={`font-mono text-[9px] px-1.5 py-0.5 rounded uppercase tracking-wider ${
+                lastConfidence >= 0.7
+                  ? 'bg-green-100 text-green-700'
+                  : lastConfidence >= 0.4
+                  ? 'bg-yellow-100 text-yellow-700'
+                  : 'bg-red-100 text-red-600'
+              }`}
+              title={`Confidence: ${(lastConfidence * 100).toFixed(0)}%`}
+            >
+              {(lastConfidence * 100).toFixed(0)}%
+            </span>
+          )}
         </div>
         <button
           onClick={handleReset}

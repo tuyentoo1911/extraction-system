@@ -1,10 +1,12 @@
 """
 RAG (Retrieval-Augmented Generation) pipeline for the KGE chatbot.
 
-Three document sources are indexed:
+Document sources indexed:
   1. Input text chunks  — passage-level windows from the user's source text
   2. Entity documents   — entity cards built from graph entities + relations
   3. KB triple docs     — formatted triples from the Knowledge Base corpus
+  4. Insight chunks     — markdown from the Insight tab (optional)
+  5. Metrics summary    — compact text from Metrics tab (optional)
 
 Retrieval uses BM25 (keyword) for fast, dependency-light search.
 The retrieved context is formatted for LLM consumption or rule-based enrichment.
@@ -34,7 +36,7 @@ MAX_CONTEXT_CHARS = 3000
 class Document:
     """A retrievable chunk with source metadata."""
     text: str
-    source: str          # "input_text" | "entity" | "kb_triple" | "relation"
+    source: str          # "input_text" | "entity" | "kb_triple" | "relation" | "insight" | "metrics"
     metadata: dict = field(default_factory=dict)
 
 @dataclass
@@ -72,6 +74,24 @@ def _chunk_text(text: str, chunk_size: int = CHUNK_SIZE, overlap: int = CHUNK_OV
         chunks.append(current.strip())
 
     return chunks
+
+def _build_insight_docs(insight_md: str) -> list[Document]:
+    chunks = _chunk_text(insight_md)
+    return [
+        Document(text=c, source="insight", metadata={"chunk_idx": i})
+        for i, c in enumerate(chunks)
+    ]
+
+
+def _build_metrics_docs(metrics_summary: str) -> list[Document]:
+    if not metrics_summary or not metrics_summary.strip():
+        return []
+    chunks = _chunk_text(metrics_summary)
+    return [
+        Document(text=c, source="metrics", metadata={"chunk_idx": i})
+        for i, c in enumerate(chunks)
+    ]
+
 
 def _build_text_docs(input_text: str) -> list[Document]:
     chunks = _chunk_text(input_text)
@@ -161,9 +181,17 @@ def _build_kb_docs(entity_names: list[str], max_per_entity: int = 5) -> list[Doc
 
     return docs
 
-def _content_hash(input_text: str, entities: list[Entity], relations: list[Relation]) -> str:
+def _content_hash(
+    input_text: str,
+    entities: list[Entity],
+    relations: list[Relation],
+    insight_markdown: str = "",
+    metrics_summary: str = "",
+) -> str:
     h = hashlib.md5()
     h.update(input_text.encode("utf-8", errors="ignore"))
+    h.update(insight_markdown.encode("utf-8", errors="ignore"))
+    h.update(metrics_summary.encode("utf-8", errors="ignore"))
     h.update(str(len(entities)).encode())
     h.update(str(len(relations)).encode())
     if entities:
@@ -174,10 +202,12 @@ def build_index(
     input_text: str,
     entities: list[Entity],
     relations: list[Relation],
+    insight_markdown: str = "",
+    metrics_summary: str = "",
 ) -> RAGIndex:
     """Build or return cached BM25 index over all document sources."""
     global _cached_index
-    ch = _content_hash(input_text, entities, relations)
+    ch = _content_hash(input_text, entities, relations, insight_markdown, metrics_summary)
 
     if _cached_index and _cached_index.content_hash == ch:
         return _cached_index
@@ -187,6 +217,8 @@ def build_index(
 
     docs: list[Document] = []
     docs.extend(_build_text_docs(input_text))
+    docs.extend(_build_insight_docs(insight_markdown))
+    docs.extend(_build_metrics_docs(metrics_summary))
     docs.extend(_build_entity_docs(entities, relations))
     docs.extend(_build_relation_docs(relations, entity_map))
     docs.extend(_build_kb_docs(entity_names, max_per_entity=5))
@@ -201,9 +233,11 @@ def build_index(
     _cached_index = idx
 
     logger.info(
-        "RAG index built: %d docs (text=%d, entity=%d, relation=%d, kb=%d)",
+        "RAG index built: %d docs (text=%d, insight=%d, metrics=%d, entity=%d, relation=%d, kb=%d)",
         len(docs),
         sum(1 for d in docs if d.source == "input_text"),
+        sum(1 for d in docs if d.source == "insight"),
+        sum(1 for d in docs if d.source == "metrics"),
         sum(1 for d in docs if d.source == "entity"),
         sum(1 for d in docs if d.source == "relation"),
         sum(1 for d in docs if d.source == "kb_triple"),
@@ -235,11 +269,13 @@ def retrieve_context(
     input_text: str,
     entities: list[Entity],
     relations: list[Relation],
+    insight_markdown: str = "",
+    metrics_summary: str = "",
     top_k: int = TOP_K,
     max_chars: int = MAX_CONTEXT_CHARS,
 ) -> str:
     """One-shot: build index + retrieve + format as context string."""
-    index = build_index(input_text, entities, relations)
+    index = build_index(input_text, entities, relations, insight_markdown, metrics_summary)
     docs = retrieve(query, index, top_k=top_k)
 
     if not docs:
@@ -247,6 +283,8 @@ def retrieve_context(
 
     sections: dict[str, list[str]] = {
         "input_text": [],
+        "insight": [],
+        "metrics": [],
         "entity": [],
         "relation": [],
         "kb_triple": [],
@@ -265,6 +303,18 @@ def retrieve_context(
         lines.append("**Source Text Excerpts:**")
         for t in sections["input_text"]:
             lines.append(f"> {t}")
+        lines.append("")
+
+    if sections["insight"]:
+        lines.append("**Insight Report:**")
+        for t in sections["insight"]:
+            lines.append(f"> {t}")
+        lines.append("")
+
+    if sections["metrics"]:
+        lines.append("**Metrics Summary:**")
+        for t in sections["metrics"]:
+            lines.append(f"- {t}")
         lines.append("")
 
     if sections["entity"]:
@@ -292,8 +342,10 @@ def retrieve_for_rule_based(
     input_text: str,
     entities: list[Entity],
     relations: list[Relation],
+    insight_markdown: str = "",
+    metrics_summary: str = "",
     top_k: int = 5,
 ) -> list[Document]:
     """Retrieve documents for rule-based enrichment (returns raw docs)."""
-    index = build_index(input_text, entities, relations)
+    index = build_index(input_text, entities, relations, insight_markdown, metrics_summary)
     return retrieve(query, index, top_k=top_k)

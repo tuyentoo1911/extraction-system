@@ -214,28 +214,6 @@ export default function Dashboard({ onBack }: { onBack: () => void }) {
     setIsProcessing(true);
     setError(null);
     try {
-      const hasCurrentData =
-        Boolean(workspaceId)
-        || Boolean(inputText.trim())
-        || Boolean(graphData)
-        || Boolean(metricsData)
-        || Boolean(insightMarkdown)
-        || chatMessages.length > 0;
-
-      // Persist current workspace state before switching to another session.
-      if (hasCurrentData) {
-        await persistWorkspace({
-          inputText,
-          graphData,
-          metricsData,
-          activeTab,
-          insightMarkdown,
-          chatSessionId,
-          chatEngine,
-          chatHistory: chatMessages,
-        });
-      }
-
       const detail = await getWorkspaceSession(sessionId);
       setWorkspaceId(detail.id);
       try {
@@ -255,7 +233,6 @@ export default function Dashboard({ onBack }: { onBack: () => void }) {
       chatEngineRef.current = detail.chat_engine ?? null;
       chatSessionIdRef.current = detail.chat_session_id ?? null;
       setActiveTab(detail.active_tab || 'graph');
-      await refreshHistory();
     } catch (err: any) {
       console.error(err);
       setError(err.message || 'Không tải được phiên lịch sử.');

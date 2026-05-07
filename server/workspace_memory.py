@@ -156,7 +156,7 @@ def list_workspaces(limit: int = 50) -> list[dict[str, Any]]:
                   created_at,
                   updated_at
                 FROM workspace_sessions
-                ORDER BY updated_at DESC
+                ORDER BY updated_at DESC, created_at DESC, id DESC
                 LIMIT %s
                 """,
                 (safe_limit,),

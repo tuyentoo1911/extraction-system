@@ -24,14 +24,15 @@ MAX_LEN = 256
 CHUNK_SIZE = 200
 CHUNK_OVERLAP = 30
 SENTENCE_CHAR_LIMIT = 500
-MIN_ENTITY_CONFIDENCE = 0.55
-MIN_SINGLE_TOKEN_NAME_CONFIDENCE = 0.78
+MIN_ENTITY_CONFIDENCE = 0.47
+MIN_SINGLE_TOKEN_NAME_CONFIDENCE = 0.70
 LONG_TEXT_CHAR_THRESHOLD = 1800
 LONG_TEXT_THRESHOLD_RELAX = 0.08
 _MIN_CONF_BY_TYPE: dict[str, float] = {
-    "PERSON": 0.58,
-    "LOCATION": 0.62,
-    "INDUSTRY": 0.70,
+    "PERSON": 0.50,
+    "LOCATION": 0.54,
+    "INDUSTRY": 0.62,
+    "PRODUCT": 0.52,
 }
 _LOCATION_PREFIX_HINTS = {
     "tp", "tp.", "thành", "thanh", "quận", "quan", "huyện", "huyen",
@@ -57,9 +58,40 @@ _PRIORITY_LOCATIONS = {
     "Hà Nội",
     "Việt Nam",
     "Mỹ",
+    "Hoa Kỳ",
+    "Hàn Quốc",
+    "Nhật Bản",
+    "Trung Quốc",
+    "Ấn Độ",
+    "Seoul",
+    "Tokyo",
+    "châu Á",
     "châu Âu",
     "TP. Hồ Chí Minh",
     "Thành phố Hồ Chí Minh",
+}
+_PRIORITY_PRODUCTS = {
+    "GPT-4",
+    "Gemini",
+    "VinFast",
+    "VinAI",
+}
+_PRIORITY_ORGANIZATIONS = {
+    "OpenAI",
+    "Google",
+    "Microsoft",
+    "World Bank",
+    "United Nations",
+    "Vingroup",
+    "Stanford University",
+    "Massachusetts Institute of Technology",
+}
+_PRIORITY_INDUSTRIES = {
+    "trí tuệ nhân tạo",
+    "dữ liệu lớn",
+    "điện toán đám mây",
+    "robot",
+    "tự động hóa",
 }
 
 def split_sentences(text: str) -> list[str]:
@@ -164,6 +196,7 @@ def run_ner(text: str) -> list[dict]:
     all_entities = post_process_entities(text, all_entities)
     all_entities = gazetteer_scan(text, all_entities)
     all_entities = _recover_priority_locations(text, all_entities)
+    all_entities = _recover_priority_entities(text, all_entities)
     # Gazetteer có thể thêm candidate quá generic; lọc một lần ở cuối pipeline.
     return _drop_obvious_noise_entities(all_entities, text_len=len(text))
 
@@ -229,9 +262,9 @@ def _effective_thresholds(text_len: int) -> tuple[dict[str, float], float, float
 
     if text_len >= LONG_TEXT_CHAR_THRESHOLD:
         for k, v in type_thresholds.items():
-            type_thresholds[k] = max(0.45, v - LONG_TEXT_THRESHOLD_RELAX)
-        base_min = max(0.45, base_min - LONG_TEXT_THRESHOLD_RELAX)
-        single_token_min = max(0.68, single_token_min - 0.05)
+            type_thresholds[k] = max(0.40, v - LONG_TEXT_THRESHOLD_RELAX)
+        base_min = max(0.40, base_min - LONG_TEXT_THRESHOLD_RELAX)
+        single_token_min = max(0.62, single_token_min - 0.05)
 
     return type_thresholds, base_min, single_token_min
 
@@ -259,6 +292,10 @@ def _drop_obvious_noise_entities(entities: list[dict], text_len: int = 0) -> lis
                 # Single-token PERSON/LOCATION cần confidence cao hơn.
                 if ent_conf < single_token_min:
                     continue
+                if not _looks_like_named_token(ent_text, ent_type):
+                    continue
+            if ent_type == "PRODUCT":
+                # Single-token PRODUCT phải viết hoa hoặc là tên thương hiệu rõ ràng.
                 if not _looks_like_named_token(ent_text, ent_type):
                     continue
             if ent_type == "INDUSTRY":
@@ -407,6 +444,81 @@ def _is_generic_gazetteer_candidate(ent: str) -> bool:
             return True
     return False
 
+def _compile_priority_pattern(phrase: str) -> re.Pattern[str]:
+    """
+    Compile pattern cho phrase ưu tiên, cho phép khoảng trắng linh hoạt
+    (space/newline/tab) giữa các token trong cụm nhiều từ.
+    """
+    tokens = [t for t in phrase.split() if t]
+    if not tokens:
+        return re.compile(r"$^")
+    body = r"\s+".join(re.escape(t) for t in tokens)
+    return re.compile(rf"(?<!\w){body}(?!\w)", re.IGNORECASE | re.UNICODE)
+
+def _try_insert_priority_entity(
+    text: str,
+    entities: list[dict],
+    occupied: list[tuple[int, int]],
+    match_start: int,
+    match_end: int,
+    match_text: str,
+    ner_type: str,
+    confidence: float,
+) -> None:
+    """
+    Thêm priority entity nếu không overlap; hoặc nâng cấp span ngắn cùng type
+    (ví dụ model bắt 'Nhật' nhưng bỏ sót 'Nhật Bản').
+    """
+    overlap_indices: list[int] = []
+    for idx, ent in enumerate(entities):
+        ent_text = ent.get("text", "").strip()
+        if not ent_text:
+            continue
+        ent_start = text.find(ent_text)
+        if ent_start == -1:
+            continue
+        ent_end = ent_start + len(ent_text)
+        if max(match_start, ent_start) < min(match_end, ent_end):
+            overlap_indices.append(idx)
+
+    if not overlap_indices:
+        entities.append({
+            "text": match_text,
+            "ner_type": ner_type,
+            "words": [],
+            "confidence": confidence,
+        })
+        occupied.append((match_start, match_end))
+        return
+
+    # Cho phép "nâng cấp" khi tất cả overlap đều là cùng type và nằm trọn trong span mới.
+    can_upgrade = True
+    for idx in overlap_indices:
+        ent = entities[idx]
+        ent_text = ent.get("text", "").strip()
+        ent_start = text.find(ent_text)
+        if ent_start == -1:
+            can_upgrade = False
+            break
+        ent_end = ent_start + len(ent_text)
+        if ent.get("ner_type") != ner_type or not (match_start <= ent_start and ent_end <= match_end):
+            can_upgrade = False
+            break
+
+    if not can_upgrade:
+        return
+
+    for idx in sorted(overlap_indices, reverse=True):
+        entities.pop(idx)
+    occupied[:] = [span for span in occupied if not (max(match_start, span[0]) < min(match_end, span[1]))]
+    entities.append({
+        "text": match_text,
+        "ner_type": ner_type,
+        "words": [],
+        "confidence": confidence,
+    })
+    occupied.append((match_start, match_end))
+
 def _recover_priority_locations(text: str, entities: list[dict]) -> list[dict]:
     """
     Bổ sung một số địa danh quan trọng hay bị miss bởi model.
@@ -425,19 +537,57 @@ def _recover_priority_locations(text: str, entities: list[dict]) -> list[dict]:
             occupied.append((start, start + len(ent_text)))
 
     for loc in _PRIORITY_LOCATIONS:
-        pattern = re.compile(rf"(?<!\w){re.escape(loc)}(?!\w)", re.IGNORECASE | re.UNICODE)
+        pattern = _compile_priority_pattern(loc)
         for m in pattern.finditer(text):
-            s, e = m.start(), m.end()
-            overlap = any(max(s, a) < min(e, b) for a, b in occupied)
-            if overlap:
-                continue
-            entities.append({
-                "text": m.group(0),
-                "ner_type": "LOCATION",
-                "words": [],
-                "confidence": 0.95,
-            })
-            occupied.append((s, e))
+            _try_insert_priority_entity(
+                text=text,
+                entities=entities,
+                occupied=occupied,
+                match_start=m.start(),
+                match_end=m.end(),
+                match_text=m.group(0),
+                ner_type="LOCATION",
+                confidence=0.95,
+            )
+    return entities
+
+def _recover_priority_entities(text: str, entities: list[dict]) -> list[dict]:
+    """
+    Bổ sung các thực thể quan trọng model thường bỏ sót trong bài viết công nghệ.
+    Chỉ thêm khi chưa overlap với entity đã có để tránh duplicate.
+    """
+    if not text.strip():
+        return entities
+
+    occupied: list[tuple[int, int]] = []
+    for ent in entities:
+        ent_text = ent.get("text", "").strip()
+        if not ent_text:
+            continue
+        start = text.find(ent_text)
+        if start != -1:
+            occupied.append((start, start + len(ent_text)))
+
+    recovery_sets = (
+        (_PRIORITY_PRODUCTS, "PRODUCT", 0.94),
+        (_PRIORITY_ORGANIZATIONS, "ORGANIZATION", 0.93),
+        (_PRIORITY_INDUSTRIES, "INDUSTRY", 0.92),
+    )
+    for phrase_set, ner_type, confidence in recovery_sets:
+        for phrase in phrase_set:
+            pattern = _compile_priority_pattern(phrase)
+            for m in pattern.finditer(text):
+                _try_insert_priority_entity(
+                    text=text,
+                    entities=entities,
+                    occupied=occupied,
+                    match_start=m.start(),
+                    match_end=m.end(),
+                    match_text=m.group(0),
+                    ner_type=ner_type,
+                    confidence=confidence,
+                )
+
     return entities
 
 def _predict_sentence(words: list[str], torch) -> list[dict]:

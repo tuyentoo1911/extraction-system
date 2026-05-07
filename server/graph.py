@@ -1,21 +1,15 @@
 """Xây dựng Knowledge Graph từ NER output + Knowledge Base.
 
-Pipeline trích xuất quan hệ — strict whitelist:
+Pipeline trích xuất quan hệ — strict whitelist + lớp đồng xuất hiện:
 ────────────────────────────────────────────────────────
-  ALLOWED_RELATIONS (9):
-      founded, headquartered_in, has_office, partnered_with,
-      competitor_of, former_employee, launched_at, developed_by,
-      operates_in
+  Tầng 1:    Pattern regex (RELATION_PATTERNS)
+  Tầng 1.5:  Multi-entity (bởi A và B, …)
+  Tầng 1.6:  Contextual
+  Tầng 1.7:  Keyword-bridge
+  Tầng 2:    KB — cửa sổ 2 câu liền
+  Tầng 2.5:  associated_with — các thực thể đứng liền trong cùng câu
 
-  Tầng 1 — Pattern-based (regex + Jaccard entity matching)
-      Chỉ giữ pattern map vào whitelist.
-
-  Tầng 1.5 — Multi-entity patterns (bởi A và B, như A và B)
-
-  Tầng 2 — KB lookup (same-sentence evidence only)
-      Chỉ thêm edge khi 2 entity cùng câu VÀ KB label map vào whitelist.
-
-  Output guard: drop mọi relation ngoài whitelist + domain/range check.
+  Output guard: chỉ giữ nhãn trong ALLOWED_RELATIONS + domain/range hợp lệ.
 """
 
 from __future__ import annotations
@@ -43,6 +37,9 @@ ALLOWED_RELATIONS: frozenset[str] = frozenset({
     "held_in",          # Event               → Location (tổ chức tại X)
     "founded_at",       # Organization/Person → Date    (thành lập năm X) — Bug-7
     "supply_to",        # Organization        → Organization (cung cấp cho) — Bug-6
+
+    # Cạnh yếu: cùng câu, đứng liền nhau, chưa có quan hệ khác — giảm đồ thị rời rạc
+    "associated_with",
 })
 
 _RELATION_NORM_MAP: dict[str, str | None] = {
@@ -103,7 +100,18 @@ _RELATION_DOMAIN_RANGE: dict[str, list[tuple[set[str], set[str]]]] = {
     "held_in":          [({"Event"},                  {"Location"})],
     "founded_at":       [({"Organization", "Person"},  {"Date"})],   # Bug-7
     "supply_to":        [({"Organization"},             {"Organization"})],  # Bug-6
+
+    "associated_with": [
+        (
+            {"Organization", "Person", "Product", "Event", "Location", "Industry"},
+            {"Organization", "Person", "Product", "Event", "Location", "Industry"},
+        ),
+    ],
 }
+
+_ASSOC_FOCUS_TYPES: frozenset[str] = frozenset({
+    "Organization", "Person", "Product", "Event", "Industry", "Location",
+})
 
 _NEWS_SOURCES: frozenset[str] = frozenset({
     "bloomberg", "reuters", "cnn", "cnbc", "bbc", "ap", "afp",
@@ -666,23 +674,26 @@ def _extract_kb_relations(
     sentences: list[str],
     existing_pk: set[tuple[str, str]],
 ) -> list[Relation]:
-    """KB lookup restricted to entity pairs co-occurring in the same sentence."""
+    """KB lookup: entity pairs cùng cửa sổ 2 câu liền (giảm miss khi NER tách câu)."""
     if not kb.kb_ready:
         return []
 
     relations: list[Relation] = []
     seen_pk: set[tuple[str, str]] = set(existing_pk)
 
-    for sent in sentences:
+    for wi in range(len(sentences)):
+        window_text = sentences[wi]
+        if wi + 1 < len(sentences):
+            window_text = window_text + " " + sentences[wi + 1]
         ents_in_sent = [
             e for e in entities
-            if not _is_noisy_date(e) and _find_pos(e, sent) >= 0
+            if not _is_noisy_date(e) and _find_pos(e, window_text) >= 0
         ]
         if len(ents_in_sent) < 2:
             continue
 
-        for i, se in enumerate(ents_in_sent):
-            for te in ents_in_sent[i + 1:]:
+        for j, se in enumerate(ents_in_sent):
+            for te in ents_in_sent[j + 1:]:
                 pk = _pk(se.id, te.id)
                 if pk in seen_pk:
                     continue
@@ -705,6 +716,53 @@ def _extract_kb_relations(
                 relations.append(Relation(source=se.id, target=te.id, label=lbl))
 
     return relations
+
+
+def _extract_cooccurrence_associations(
+    entities: list[Entity],
+    sentences: list[str],
+    existing_pk: set[tuple[str, str]],
+) -> list[Relation]:
+    """Thêm cạnh yếu giữa các thực thể đứng liền trong cùng câu (theo vị trí text).
+
+    Chỉ tạo khi cặp chưa có bất kỳ quan hệ nào — không chồng lên các nhãn ngữ nghĩa mạnh.
+    """
+    lbl = "associated_with"
+    rels: list[Relation] = []
+
+    def _add(src: Entity, tgt: Entity) -> None:
+        if src.id == tgt.id:
+            return
+        if _is_news_source(src.name) or _is_news_source(tgt.name):
+            return
+        if not _validate_domain_range(lbl, src.type, tgt.type):
+            return
+        pk = _pk(src.id, tgt.id)
+        if pk in existing_pk:
+            return
+        existing_pk.add(pk)
+        rels.append(Relation(source=src.id, target=tgt.id, label=lbl))
+
+    for sent in sentences:
+        positioned: list[tuple[int, Entity]] = []
+        for e in entities:
+            if e.type not in _ASSOC_FOCUS_TYPES:
+                continue
+            pos = _find_pos(e, sent)
+            if pos >= 0:
+                positioned.append((pos, e))
+        if len(positioned) < 2:
+            continue
+        positioned.sort(key=lambda x: x[0])
+        for k in range(len(positioned) - 1):
+            left = positioned[k][1]
+            right = positioned[k + 1][1]
+            if left.id == right.id:
+                continue
+            _add(left, right)
+
+    return rels
+
 
 def _is_camelcase_of(alias: str, primary: str) -> bool:
     """Kiểm tra alias có phải là CamelCase viết tắt của primary không.
@@ -1668,7 +1726,10 @@ def build_graph(raw_entities: list[dict], text: str) -> GraphData:
     Strict relation extraction — whitelist only:
       Tầng 1:   Pattern regex (RELATION_PATTERNS)
       Tầng 1.5: Multi-entity patterns (bởi A và B, như A và B)
-      Tầng 2:   KB lookup (same-sentence evidence only)
+      Tầng 1.6: Contextual / compound patterns
+      Tầng 1.7: Keyword-bridge
+      Tầng 2:   KB lookup (cửa sổ 2 câu liền)
+      Tầng 2.5: Đồng xuất hiện (associated_with) — nối các node liền kề trong câu
       Guard:    Drop anything outside ALLOWED_RELATIONS
     """
     raw_entities = merge_adjacent_entities(raw_entities)
@@ -1720,9 +1781,12 @@ def build_graph(raw_entities: list[dict], text: str) -> GraphData:
     logger.debug("Tầng 1.7 (keyword-bridge): %d", len(kw_rels))
 
     kb_rels = _extract_kb_relations(entities, sentences, existing_pk)
-    logger.debug("Tầng 2 (KB same-sentence): %d", len(kb_rels))
+    logger.debug("Tầng 2 (KB 2-câu): %d", len(kb_rels))
 
-    all_rels = pat_rels + multi_rels + ctx_rels + kw_rels + kb_rels
+    assoc_rels = _extract_cooccurrence_associations(entities, sentences, existing_pk)
+    logger.debug("Tầng 2.5 (đồng xuất hiện): %d", len(assoc_rels))
+
+    all_rels = pat_rels + multi_rels + ctx_rels + kw_rels + kb_rels + assoc_rels
 
     final_entities, final_relations = _fold_properties(entities, all_rels, [])
 
@@ -1733,10 +1797,10 @@ def build_graph(raw_entities: list[dict], text: str) -> GraphData:
     final_relations = _output_guard(final_relations, entity_map)
 
     logger.info(
-        "build_graph: %d entities, %d relations (P=%d M=%d C=%d KW=%d KB=%d OR=%d)",
+        "build_graph: %d entities, %d relations (P=%d M=%d C=%d KW=%d KB=%d AS=%d OR=%d)",
         len(final_entities), len(final_relations),
         len(pat_rels), len(multi_rels), len(ctx_rels), len(kw_rels), len(kb_rels),
-        len(orphan_rels),
+        len(assoc_rels), len(orphan_rels),
     )
     return GraphData(entities=final_entities, relations=final_relations)
 

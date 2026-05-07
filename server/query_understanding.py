@@ -71,6 +71,39 @@ def _fuzzy_score(a: str, b: str) -> float:
     )
 
 
+def _normalize_query_for_match(text: str) -> str:
+    """Normalize text for typo-tolerant keyword matching."""
+    s = _strip_diacritics((text or "").lower())
+    # Keep letters/numbers/spaces, then collapse duplicate whitespace.
+    s = re.sub(r"[^a-z0-9\s]", " ", s)
+    s = re.sub(r"\s+", " ", s).strip()
+    return s
+
+
+def _contains_any_keyword(
+    q_raw: str,
+    q_ascii: str,
+    keywords: set[str],
+    typo_variants: Optional[set[str]] = None,
+) -> bool:
+    """
+    Check whether query contains any keyword with light typo tolerance.
+    """
+    q_norm = _normalize_query_for_match(q_raw)
+    keyword_pool = set(keywords)
+    if typo_variants:
+        keyword_pool.update(typo_variants)
+    for kw in keyword_pool:
+        kw_norm = _normalize_query_for_match(kw)
+        if not kw_norm:
+            continue
+        if kw in q_raw or kw in q_ascii:
+            return True
+        if kw_norm in q_norm:
+            return True
+    return False
+
+
 # ── Public dataclass ──────────────────────────────────────────────────────────
 
 @dataclass
@@ -135,7 +168,7 @@ def _detect_followup(q: str, history: list[dict]) -> bool:
     if any(p in q_lower for p in _FOLLOWUP_PRONOUNS):
         return True
     # Very short query after an established session is likely a follow-up
-    if len(q.split()) <= 3 and len(history) >= 2:
+    if len(q.split()) <= 4 and len(history) >= 2:
         return True
     return False
 
@@ -192,9 +225,9 @@ def parse_query(
         )
 
     # ── Help ──────────────────────────────────────────────────────────────────
-    help_kw    = {"help", "giúp", "hướng dẫn", "trợ giúp", "hỏi gì", "chức năng"}
-    help_ascii = {"giup", "huong dan", "tro giup", "hoi gi", "chuc nang"}
-    if any(k in q for k in help_kw) or any(k in q_ascii for k in help_ascii):
+    help_kw = {"help", "giúp", "hướng dẫn", "trợ giúp", "hỏi gì", "chức năng"}
+    help_typos = {"giup", "huong dan", "tro giup", "hoi gi", "chuc nang", "co lam duoc gi"}
+    if _contains_any_keyword(q, q_ascii, help_kw, help_typos):
         return ParsedQuery(intent=INTENT_HELP, mode=MODE_DETERMINISTIC, raw=raw)
 
     # ── KB lookup ─────────────────────────────────────────────────────────────
@@ -213,9 +246,9 @@ def parse_query(
             )
 
     # ── Summary / overview ────────────────────────────────────────────────────
-    summary_kw    = {"tóm tắt", "tổng quan", "overview", "summary", "mô tả đồ thị"}
-    summary_ascii = {"tom tat", "tong quan"}
-    if any(k in q for k in summary_kw) or any(k in q_ascii for k in summary_ascii):
+    summary_kw = {"tóm tắt", "tổng quan", "overview", "summary", "mô tả đồ thị"}
+    summary_typos = {"tom tat", "tong quan", "tong hop", "khai quat"}
+    if _contains_any_keyword(q, q_ascii, summary_kw, summary_typos):
         return ParsedQuery(
             intent=INTENT_SUMMARY, mode=MODE_HYBRID,
             entities_mentioned=mentioned, raw=raw,
@@ -295,18 +328,18 @@ def parse_query(
         )
 
     # ── Count / statistics ────────────────────────────────────────────────────
-    count_kw    = {"bao nhiêu", "how many", "count", "total", "thống kê", "statistics", "stats"}
-    count_ascii = {"bao nhieu", "thong ke", "so luong"}
-    if any(k in q for k in count_kw) or any(k in q_ascii for k in count_ascii):
+    count_kw = {"bao nhiêu", "how many", "count", "total", "thống kê", "statistics", "stats"}
+    count_typos = {"bao nhieu", "thong ke", "so luong", "co may", "tong so"}
+    if _contains_any_keyword(q, q_ascii, count_kw, count_typos):
         return ParsedQuery(
             intent=INTENT_COUNT, mode=MODE_DETERMINISTIC,
             entities_mentioned=mentioned, raw=raw,
         )
 
     # ── Type listing ──────────────────────────────────────────────────────────
-    type_trigger_kw    = {"liệt kê", "danh sách", "list all", "tất cả", "toàn bộ"}
-    type_trigger_ascii = {"liet ke", "danh sach", "tat ca"}
-    if any(k in q for k in type_trigger_kw) or any(k in q_ascii for k in type_trigger_ascii):
+    type_trigger_kw = {"liệt kê", "danh sách", "list all", "tất cả", "toàn bộ"}
+    type_trigger_typos = {"liet ke", "danh sach", "tat ca", "toan bo"}
+    if _contains_any_keyword(q, q_ascii, type_trigger_kw, type_trigger_typos):
         _entity_type_map = {
             "person": "Person",       "người": "Person",        "nhân vật": "Person",
             "organization": "Organization", "công ty": "Organization", "tổ chức": "Organization",
@@ -341,6 +374,22 @@ def parse_query(
         if is_followup:
             pq.entities_mentioned = _resolve_followup_entities(pq, history, entities)
         return pq
+
+    # ── Very short/elliptic query fallback: try inheriting recent entity context ─
+    if len(q.split()) <= 6 and is_followup:
+        inherited = _resolve_followup_entities(
+            ParsedQuery(intent=INTENT_UNKNOWN, mode=MODE_GRAPH_FIRST, is_followup=True, raw=raw),
+            history,
+            entities,
+        )
+        if inherited:
+            return ParsedQuery(
+                intent=INTENT_ENTITY_LOOKUP,
+                mode=MODE_GRAPH_FIRST,
+                entities_mentioned=inherited,
+                is_followup=True,
+                raw=raw,
+            )
 
     # ── Follow-up with no entities → inherit from history ────────────────────
     if is_followup:

@@ -84,10 +84,19 @@ CÁCH TRẢ LỜI:
 - Nếu là so sánh: trình bày rõ từng tiêu chí
 - Nếu là phân tích: giải thích ngắn gọn + kết luận
 - Luôn trả lời bằng ngôn ngữ của người dùng (Việt/Anh)
+- Không tự ý chèn từ/câu tiếng Trung, Nhật, Hàn nếu người dùng không yêu cầu.
+- Chỉ trả lời đúng trọng tâm câu hỏi người dùng; không tự thêm câu hỏi ngược/gợi ý nếu không được yêu cầu.
 - Trả lời ngắn gọn, tối đa 5-8 dòng nếu không cần thiết dài hơn.
 
 MỤC TIÊU:
 Trả lời chính xác câu hỏi người dùng bằng cách phân tích dữ liệu từ Knowledge Graph.
+
+NĂNG LỰC BẮT BUỘC:
+- Hiểu câu hỏi tiếng Việt tự nhiên, kể cả câu ngắn, thiếu chủ ngữ, hoặc có lỗi chính tả nhẹ.
+- Giữ ngữ cảnh hội thoại giữa nhiều lượt hỏi đáp để trả lời nhất quán.
+- Hỗ trợ cả câu hỏi trực tiếp, câu hỏi suy luận, câu hỏi nhiều bước và diễn đạt tự do.
+- Kết hợp dữ liệu từ nhiều nguồn (KG + KB + insight + metrics + input text) để trả lời đầy đủ.
+- Trả lời tự nhiên, thân thiện, linh hoạt như giao tiếp thực tế, nhưng vẫn chính xác dữ liệu.
 
 =====================
 NGUYÊN TẮC QUAN TRỌNG
@@ -296,7 +305,12 @@ async def handle_chat(req: ChatRequest) -> ChatResponse:
         evidence_count = len(pq.entities_mentioned)
 
     # ── 7. Persist & return ───────────────────────────────────────────────────
-    reply = _normalize_reply_text(reply)
+    target_lang = _detect_user_language(req.message)
+    reply = _normalize_reply_text_for_language(
+        reply,
+        target_lang=target_lang,
+        user_message=req.message,
+    )
     _safe_add_message(session_id, "model", reply)
 
     recent = _safe_get_history(session_id, limit=20)
@@ -357,12 +371,163 @@ def _normalize_reply_text(text: str) -> str:
     Normalize escaped formatting tokens from LLM outputs.
     Example: "\\n" -> newline so markdown renders correctly.
     """
+    return _normalize_reply_text_for_language(text, target_lang="vi")
+
+
+def _detect_user_language(user_message: str) -> str:
+    """
+    Lightweight language detector for reply formatting.
+    Returns: 'vi' | 'en'
+    """
+    q = (user_message or "").lower()
+    vi_markers = {
+        "không", "bao nhiêu", "tóm tắt", "quan hệ", "liệt kê", "giúp", "với", "được", "thế nào",
+    }
+    if any(m in q for m in vi_markers):
+        return "vi"
+    # Presence of Vietnamese diacritics is a strong signal.
+    if re.search(r"[ăâđêôơưáàảãạắằẳẵặấầẩẫậéèẻẽẹếềểễệíìỉĩịóòỏõọốồổỗộớờởỡợúùủũụứừửữựýỳỷỹỵ]", q):
+        return "vi"
+    return "en"
+
+
+def _strip_unexpected_cjk(text: str) -> str:
+    """
+    Remove accidental CJK fragments from model output when the user did not ask for them.
+    """
+    if not text:
+        return text
+    cjk_re = re.compile(r"[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]")
+    cleaned_lines: list[str] = []
+    for line in text.split("\n"):
+        # Drop line only when it contains CJK and has little/no Latin content.
+        if cjk_re.search(line):
+            latin_count = len(re.findall(r"[A-Za-zÀ-ỹ]", line))
+            cjk_count = len(cjk_re.findall(line))
+            if cjk_count >= max(2, latin_count):
+                continue
+            line = cjk_re.sub("", line)
+            line = re.sub(r"\s{2,}", " ", line).strip()
+            if not line:
+                continue
+        cleaned_lines.append(line)
+    return "\n".join(cleaned_lines).strip()
+
+
+def _wants_suggestions(user_message: str) -> bool:
+    q = (user_message or "").lower()
+    suggestion_triggers = {
+        "gợi ý", "goi y", "đề xuất", "de xuat", "help", "giúp", "huong dan", "hướng dẫn",
+        "what can", "suggest", "ví dụ", "vi du",
+    }
+    return any(t in q for t in suggestion_triggers)
+
+
+def _trim_unsolicited_followups(reply: str, user_message: str) -> str:
+    """
+    Remove trailing meta-prompts like "Bạn có câu hỏi nào khác...?"
+    unless user explicitly asks for suggestions/help.
+    """
+    if not reply:
+        return reply
+    if _wants_suggestions(user_message):
+        return reply
+
+    lines = [ln.rstrip() for ln in reply.split("\n")]
+    trimmed: list[str] = []
+    stop_markers = [
+        r"^bạn có câu hỏi.*\?$",
+        r"^nếu bạn muốn biết thêm.*$",
+        r"^hãy hỏi.*cụ thể.*$",
+        r"^bạn có thể hỏi.*$",
+        r"^you can ask.*$",
+        r"^would you like.*\?$",
+        r"^if you want.*$",
+    ]
+    stop_re = [re.compile(p, re.IGNORECASE) for p in stop_markers]
+
+    for ln in lines:
+        normalized = ln.strip()
+        if any(rx.match(normalized) for rx in stop_re):
+            break
+        trimmed.append(ln)
+
+    # Remove trailing empty lines.
+    while trimmed and not trimmed[-1].strip():
+        trimmed.pop()
+    return "\n".join(trimmed).strip() or reply.strip()
+
+
+def _collapse_repeated_content(text: str) -> str:
+    """
+    Collapse duplicated lines/paragraphs that sometimes appear in unstable LLM outputs.
+    """
+    if not text:
+        return text
+
+    # 1) Remove consecutive duplicate lines.
+    raw_lines = [ln.rstrip() for ln in text.split("\n")]
+    dedup_lines: list[str] = []
+    prev_norm = ""
+    for ln in raw_lines:
+        norm = re.sub(r"\s+", " ", ln.strip().lower())
+        if norm and norm == prev_norm:
+            continue
+        dedup_lines.append(ln)
+        prev_norm = norm
+    cleaned = "\n".join(dedup_lines).strip()
+
+    # 2) Remove repeated paragraphs (same normalized paragraph appears many times).
+    paragraphs = [p.strip() for p in re.split(r"\n\s*\n", cleaned) if p.strip()]
+    if not paragraphs:
+        return cleaned
+
+    seen: set[str] = set()
+    unique_paragraphs: list[str] = []
+    for p in paragraphs:
+        p_norm = re.sub(r"\s+", " ", p.lower())
+        if p_norm in seen:
+            continue
+        seen.add(p_norm)
+        unique_paragraphs.append(p)
+    return "\n\n".join(unique_paragraphs).strip()
+
+
+def _is_low_quality_continuation(base: str, cont: str) -> bool:
+    """
+    Detect continuation chunks that mostly repeat/noise and should be discarded.
+    """
+    if not cont.strip():
+        return True
+    base_norm = re.sub(r"\s+", " ", base.lower())
+    cont_norm = re.sub(r"\s+", " ", cont.lower())
+    # Mostly duplicated from first part.
+    if cont_norm in base_norm:
+        return True
+    # Too many CJK chars compared to Latin/Vietnamese letters for this project.
+    cjk_count = len(re.findall(r"[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]", cont))
+    latin_count = len(re.findall(r"[A-Za-zÀ-ỹ]", cont))
+    if cjk_count > 0 and cjk_count >= max(3, latin_count):
+        return True
+    return False
+
+
+def _normalize_reply_text_for_language(
+    text: str,
+    target_lang: str = "vi",
+    user_message: str = "",
+) -> str:
     if not text:
         return text
 
     normalized = text.replace("\r\n", "\n").replace("\r", "\n")
     # Convert common escaped control chars emitted by some models.
     normalized = normalized.replace("\\n", "\n").replace("\\t", "\t")
+
+    if target_lang in {"vi", "en"}:
+        normalized = _strip_unexpected_cjk(normalized)
+    normalized = _collapse_repeated_content(normalized)
+    normalized = _trim_unsolicited_followups(normalized, user_message)
 
     # Trim trailing spaces but keep meaningful line breaks for markdown.
     lines = [line.rstrip() for line in normalized.split("\n")]
@@ -487,6 +652,29 @@ def _prompt_snippet(text: str, max_chars: int) -> str:
     return cut + "\n..."
 
 
+def _build_history_context(history: list[dict], max_turns: int = 6, max_chars: int = 1200) -> str:
+    """
+    Build compact conversation context for continuity in follow-up questions.
+    """
+    if not history:
+        return "(none)"
+    # Use newest turns, but preserve chronological order.
+    selected = history[-max_turns:]
+    lines: list[str] = []
+    total_chars = 0
+    for row in selected:
+        role = "Assistant" if row.get("role") == "model" else "User"
+        content = (row.get("content") or "").strip()
+        if not content:
+            continue
+        line = f"{role}: {content}"
+        if total_chars + len(line) > max_chars:
+            break
+        lines.append(line)
+        total_chars += len(line)
+    return "\n".join(lines) if lines else "(none)"
+
+
 async def _call_llm_with_context(
     history: list[dict],
     question: str,
@@ -506,14 +694,21 @@ async def _call_llm_with_context(
 
     insight_excerpt = _prompt_snippet(insight_markdown, 2800)
     metrics_excerpt = _prompt_snippet(metrics_summary, 2000)
+    history_context = _build_history_context(history, max_turns=8, max_chars=1500)
 
     user_msg = (
         f"Question:\n{question}\n\n"
+        f"Recent conversation context:\n{history_context}\n\n"
         f"Knowledge Graph:\n{kg_text}\n\n"
         f"Context:\n{context_str or '(none)'}\n\n"
         f"Input Text:\n{text_snippet or '(none)'}\n\n"
         f"Insight report (excerpt, optional):\n{insight_excerpt or '(none)'}\n\n"
-        f"Metrics summary (optional):\n{metrics_excerpt or '(none)'}"
+        f"Metrics summary (optional):\n{metrics_excerpt or '(none)'}\n\n"
+        "Response requirements:\n"
+        "- Understand natural Vietnamese phrasing, including short and implicit follow-up questions.\n"
+        "- If the question requires multi-step reasoning, reason over available graph/context evidence before concluding.\n"
+        "- Keep answer natural and human-like, concise, and grounded in provided data.\n"
+        "- If data is insufficient, state clearly that the system has no matching information."
     )
 
     msgs: list[dict[str, str]] = []
@@ -547,7 +742,7 @@ async def _call_llm_with_context(
                 timeout=ollama_timeout,
             )
             cont = (cont or "").strip()
-            if cont:
+            if cont and not _is_low_quality_continuation(first, cont):
                 return f"{first.rstrip()}\n{cont}"
         except Exception:
             # Ignore continuation failure and keep first answer.

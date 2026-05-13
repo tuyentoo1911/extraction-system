@@ -24,6 +24,7 @@ model/knowledge_graph_output/*.png
 model/knowledge_graph_output/*.gexf
 model/knowledge_graph_output/*.graphml.xml
 model/knowledge_graph_output/*.html
+model/phobert_re_best_model
 
 # Feature engineering artifacts (large generated files)
 feature_engineering_output/

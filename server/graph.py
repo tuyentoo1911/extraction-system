@@ -23,13 +23,14 @@ from constants import TYPE_MAP
 from schemas import Entity, EntityProperty, Relation, GraphData
 from ner import split_sentences
 import knowledge_base as kb
+import re_model
 
 logger = logging.getLogger(__name__)
 
 ALLOWED_RELATIONS: frozenset[str] = frozenset({
     "founded", "headquartered_in", "has_office", "partnered_with",
     "competitor_of", "former_employee", "launched_at", "developed_by",
-    "operates_in",
+    "operates_in", "leader_of", "owns",
 
     "occurred_in",      # Event → Location  (xảy ra tại X)
     "has_revenue",      # Organization        → Money (báo cáo doanh thu X)
@@ -38,8 +39,7 @@ ALLOWED_RELATIONS: frozenset[str] = frozenset({
     "founded_at",       # Organization/Person → Date    (thành lập năm X) — Bug-7
     "supply_to",        # Organization        → Organization (cung cấp cho) — Bug-6
 
-    # Cạnh yếu: cùng câu, đứng liền nhau, chưa có quan hệ khác — giảm đồ thị rời rạc
-    "associated_with",
+
 })
 
 _RELATION_NORM_MAP: dict[str, str | None] = {
@@ -62,6 +62,8 @@ _RELATION_NORM_MAP: dict[str, str | None] = {
     "developed_by_passive":        "developed_by",
     "developed_by":                "developed_by",
     "operates_in":                 "operates_in",
+    "leader_of":                   "leader_of",
+    "owns":                        "owns",
 
     "occurred_in":                 "occurred_in",
     "has_revenue":                 "has_revenue",
@@ -74,7 +76,7 @@ _RELATION_NORM_MAP: dict[str, str | None] = {
     "SẢN XUẤT":                    "developed_by",
     "THUỘC NGÀNH":                 "operates_in",
     "XẢY RA TẠI":                  None,
-    "LÃNH ĐẠO":                   None,
+    "LÃNH ĐẠO":                   "leader_of",
     "LIÊN QUAN":                   None,
     "CÓ GIÁ TRỊ":                None,
     "TĂNG TRƯỞNG":                None,
@@ -90,6 +92,8 @@ _RELATION_DOMAIN_RANGE: dict[str, list[tuple[set[str], set[str]]]] = {
     "partnered_with":   [({"Organization"},           {"Organization"})],
     "competitor_of":    [({"Organization"},           {"Organization"})],
     "former_employee":  [({"Person"},                 {"Organization"})],
+    "leader_of":        [({"Person"},                 {"Organization"})],
+    "owns":             [({"Organization"},           {"Organization", "Product"})],
     "launched_at":      [({"Product"},                {"Event"})],
     "developed_by":     [({"Product"},                {"Organization", "Person"})],
     "operates_in":      [({"Organization"},           {"Industry"})],
@@ -200,6 +204,16 @@ _NAME = (
 _STOP = r"(?=\s*(?:[,\.\(\);:\-]|\s+[a-z\u00e0-\u01b0\u1ea1-\u1ef9])|$)"
 
 RELATION_PATTERNS: list[RelationPattern] = [
+
+    RelationPattern("leader_of",
+        re.compile(
+            r"(?P<org>" + _NAME + r")\s+"
+            r"(?:d\u01b0\u1edbi\s+s\u1ef1\s+l\u00e3nh\s+\u0111\u1ea1o\s+c\u1ee7a|do)\s+"
+            r"(?P<person>" + _NAME + r")" + _STOP,
+            re.UNICODE),
+        subj_types={"ORGANIZATION"}, obj_types={"PERSON"}, confidence=0.88, reverse_edge=True,
+        subj_group="org", obj_group="person"),
+
 
     RelationPattern("founded_by",
         re.compile(
@@ -1354,11 +1368,9 @@ _ORPHAN_RULES: dict[str, list[tuple[str, set[str], bool]]] = {
         ("occurred_in",{"Location"},    True),
     ],
     "Person": [
-        ("former_employee", {"Organization"}, True),
         ("founded",         {"Organization"}, True),
     ],
     "Organization": [
-        ("partnered_with",   {"Organization"}, True),
         ("headquartered_in", {"Location"},     True),
         ("operates_in",      {"Industry"},     True),
     ],
@@ -1448,7 +1460,7 @@ def _connect_all_orphans(
                 # entities that share a sentence to prevent cross-sentence
                 # Location/Date orphans latching onto wrong entities.
                 if rel_lbl in ("held_in", "occurred_in", "founded_at",
-                               "headquartered_in", "has_office"):
+                               "headquartered_in", "has_office", "operates_in"):
                     oi = sent_map.get(orphan.id, -1)
                     pi = sent_map.get(partner.id, -1)
                     if oi < 0 or pi < 0 or oi != pi:
@@ -1690,7 +1702,7 @@ def _extract_multi_entity_relations(
         main_e = _best_entity_match(m.group("main").strip(), orgs, {"ORGANIZATION"})
         if not main_e:
             continue
-        parts = re.split(r'\s+và\s+|,\s*', m.group("oc"))
+        parts = re.split(r'\s+v\u00e0\s+|,\s*', m.group("oc"))
         for part in parts:
             competitor_e = _best_entity_match(part.strip(), orgs, {"ORGANIZATION"})
             if competitor_e and competitor_e.id != main_e.id:
@@ -1698,6 +1710,50 @@ def _extract_multi_entity_relations(
                 if pk not in existing_pk:
                     existing_pk.add(pk)
                     rels.append(Relation(source=main_e.id, target=competitor_e.id, label="competitor_of"))
+
+    from ner import split_sentences
+    for sent in split_sentences(text):
+        for m in re.finditer(
+            r"\b(?:ph\u00e1t\s+tri\u1ec3n|s\u1edf\s+h\u1eefu)\b(?:[^.\n]{0,60}?)\b(?:nh\u01b0|g\u1ed3m)\s+"
+            r"(?P<oc>[A-Z\u00C0-\u1EF9][\w\s,\u00C0-\u1EF9&]+?)(?=[,\.\n]|$)",
+            sent, re.IGNORECASE
+        ):
+            kw_start = m.start()
+            main_e = None
+            best_dist = 9999
+            for org in orgs:
+                pos = _find_pos(org, sent)
+                if 0 <= pos < kw_start:
+                    dist = kw_start - pos
+                    if dist < best_dist:
+                        best_dist = dist
+                        main_e = org
+            if not main_e:
+                continue
+            parts = re.split(r'\s+v\u00e0\s+|,\s*', m.group("oc"))
+            for part in parts:
+                child_e = _best_entity_match(part.strip(), orgs + [p for p in entities if p.type == "Product"], {"ORGANIZATION", "PRODUCT"})
+                if child_e and child_e.id != main_e.id:
+                    pk = _pk(main_e.id, child_e.id)
+                    if pk not in existing_pk:
+                        existing_pk.add(pk)
+                        rels.append(Relation(source=main_e.id, target=child_e.id, label="owns"))
+        for m in re.finditer(
+            r"\bnh\u01b0\s+(?P<orgs>[A-Z\u00C0-\u1EF9][\w\s,\u00C0-\u1EF9&]+?(?:\s+v\u00e0\s+[A-Z\u00C0-\u1EF9][\w\s\u00C0-\u1EF9&]+?)+)"
+            r"\s+\u0111ang\s+c\u1ea1nh\s+tranh",
+            sent, re.IGNORECASE
+        ):
+            parts = re.split(r'\s+v\u00e0\s+|,\s*', m.group("orgs"))
+            org_ents = []
+            for part in parts:
+                e = _best_entity_match(part.strip(), orgs, {"ORGANIZATION"})
+                if e: org_ents.append(e)
+            for i in range(len(org_ents)):
+                for j in range(i+1, len(org_ents)):
+                    pk = _pk(org_ents[i].id, org_ents[j].id)
+                    if pk not in existing_pk:
+                        existing_pk.add(pk)
+                        rels.append(Relation(source=org_ents[i].id, target=org_ents[j].id, label="competitor_of"))
 
     return rels
 
@@ -1730,6 +1786,7 @@ def build_graph(raw_entities: list[dict], text: str) -> GraphData:
       Tầng 1.7: Keyword-bridge
       Tầng 2:   KB lookup (cửa sổ 2 câu liền)
       Tầng 2.5: Đồng xuất hiện (associated_with) — nối các node liền kề trong câu
+      Tầng 3:   PhoBERT RE — Deep Learning cho các cặp chưa có quan hệ
       Guard:    Drop anything outside ALLOWED_RELATIONS
     """
     raw_entities = merge_adjacent_entities(raw_entities)
@@ -1786,7 +1843,21 @@ def build_graph(raw_entities: list[dict], text: str) -> GraphData:
     assoc_rels = _extract_cooccurrence_associations(entities, sentences, existing_pk)
     logger.debug("Tầng 2.5 (đồng xuất hiện): %d", len(assoc_rels))
 
-    all_rels = pat_rels + multi_rels + ctx_rels + kw_rels + kb_rels + assoc_rels
+    # ── Tầng 3: PhoBERT RE ─────────────────────────────────────────
+    # Tập hợp các cặp entity ĐÃ có quan hệ (bất kể chiều).
+    # Sử dụng frozenset(·, ·) để bức tường không phụ thuộc vào hướng cạnh.
+    prior_rels = pat_rels + multi_rels + ctx_rels + kw_rels + kb_rels + assoc_rels
+    paired_ids: set[frozenset] = {
+        frozenset({r.source, r.target}) for r in prior_rels
+    }
+    phobert_rels = re_model.predict_relations(
+        entities=entities,
+        sentences=sentences,
+        paired_ids=paired_ids,
+    )
+    logger.debug("Tầng 3 (PhoBERT RE): %d", len(phobert_rels))
+
+    all_rels = pat_rels + multi_rels + ctx_rels + kw_rels + kb_rels + assoc_rels + phobert_rels
 
     final_entities, final_relations = _fold_properties(entities, all_rels, [])
 
@@ -1797,10 +1868,10 @@ def build_graph(raw_entities: list[dict], text: str) -> GraphData:
     final_relations = _output_guard(final_relations, entity_map)
 
     logger.info(
-        "build_graph: %d entities, %d relations (P=%d M=%d C=%d KW=%d KB=%d AS=%d OR=%d)",
+        "build_graph: %d entities, %d relations (P=%d M=%d C=%d KW=%d KB=%d AS=%d OR=%d PB=%d)",
         len(final_entities), len(final_relations),
         len(pat_rels), len(multi_rels), len(ctx_rels), len(kw_rels), len(kb_rels),
-        len(assoc_rels), len(orphan_rels),
+        len(assoc_rels), len(orphan_rels), len(phobert_rels),
     )
     return GraphData(entities=final_entities, relations=final_relations)
 

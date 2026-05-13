@@ -247,8 +247,14 @@ export default function GraphView({ data }: GraphViewProps) {
   const drawLink = useCallback((link: any, ctx: CanvasRenderingContext2D, globalScale: number) => {
     const isHighlighted = selectedNode ? highlightLinks.has(link) : true;
     const isHovered = hoverLink === link;
-    if (!isHighlighted && !isHovered) return;
-    if (!(globalScale >= 1.5 || (selectedNode && isHighlighted) || isHovered)) return;
+    const isPredicted = !!link.isPredicted;
+    const confidence: number = isPredicted ? (link.confidence ?? 0.7) : 1;
+
+    if (!isHighlighted && !isHovered && !isPredicted) return;
+
+    // Show label when: predicted link (always), hovered, node selected+highlighted, or sufficient zoom
+    const showLabel = isPredicted || isHovered || (selectedNode && isHighlighted) || globalScale >= 1.2;
+    if (!showLabel) return;
 
     const start = link.source;
     const end = link.target;
@@ -270,9 +276,11 @@ export default function GraphView({ data }: GraphViewProps) {
       };
     }
 
-    const label = link.label.toUpperCase();
-    const fontSize = 3;
-    ctx.font = `${fontSize}px JetBrains Mono, monospace`;
+    // Label: show confidence % for predicted links
+    const baseLabel = link.label.toUpperCase();
+    const label = isPredicted ? `${baseLabel} ${Math.round(confidence * 100)}%` : baseLabel;
+    const fontSize = isPredicted ? 3.5 : 3;
+    ctx.font = `${isPredicted ? 'bold ' : ''}${fontSize}px JetBrains Mono, monospace`;
     const textWidth = ctx.measureText(label).width;
     const pX = 2, pY = 1.5;
     const bgW = textWidth + pX * 2;
@@ -280,16 +288,22 @@ export default function GraphView({ data }: GraphViewProps) {
     const bx = pos.x - bgW / 2;
     const by = pos.y - bgH / 2;
 
-    ctx.fillStyle = link.isPredicted ? '#ecfdf5' : '#f4f4f0';
+    // Opacity scales with confidence for predicted links
+    const alpha = isPredicted ? 0.5 + confidence * 0.5 : 1;
+    ctx.globalAlpha = alpha;
+
+    ctx.fillStyle = isPredicted ? '#ecfdf5' : '#f4f4f0';
     ctx.fillRect(bx, by, bgW, bgH);
-    ctx.lineWidth = 0.2;
-    ctx.strokeStyle = link.isPredicted ? '#10b981' : '#000';
+    ctx.lineWidth = isPredicted ? 0.5 : 0.2;
+    ctx.strokeStyle = isPredicted ? '#10b981' : '#000';
     ctx.strokeRect(bx, by, bgW, bgH);
-    ctx.fillStyle = link.isPredicted ? '#10b981' : '#f25f22';
+    ctx.fillStyle = isPredicted ? '#10b981' : '#f25f22';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText(label, pos.x, pos.y + 0.3);
+    ctx.globalAlpha = 1;
   }, [selectedNode, highlightLinks, hoverLink]);
+
 
   return (
     <div ref={containerRef} className="w-full h-full bg-white relative overflow-hidden flex items-center justify-center">
@@ -313,17 +327,30 @@ export default function GraphView({ data }: GraphViewProps) {
           linkColor={(link: any) => {
             if (hoverLink === link) return '#f25f22';
             const hi = selectedNode ? highlightLinks.has(link) : true;
+            if (link.isPredicted) {
+              const conf = link.confidence ?? 0.7;
+              const opacity = hi ? (0.4 + conf * 0.6).toFixed(2) : (0.2 + conf * 0.3).toFixed(2);
+              return `rgba(16,185,129,${opacity})`;
+            }
             if (!hi) return 'rgba(0,0,0,0.1)';
-            return link.isPredicted ? '#10b981' : (selectedNode ? '#f25f22' : '#000');
+            return selectedNode ? '#f25f22' : '#000';
           }}
           linkWidth={(link: any) => {
             if (hoverLink === link) return 2;
             const hi = selectedNode ? highlightLinks.has(link) : true;
-            return hi ? (link.isPredicted ? 1.5 : 1) : 0.2;
+            if (link.isPredicted) {
+              const conf = link.confidence ?? 0.7;
+              return hi ? 1 + conf * 1.5 : 0.5 + conf * 0.8;
+            }
+            return hi ? 1 : 0.2;
           }}
           linkLineDash={(link: any) => link.isPredicted ? [4, 4] : undefined}
           linkCurvature="curvature"
-          linkDirectionalArrowLength={(link: any) => (selectedNode ? highlightLinks.has(link) : true) ? 3 : 0}
+          linkDirectionalArrowLength={(link: any) => {
+            const hi = selectedNode ? highlightLinks.has(link) : true;
+            if (link.isPredicted) return hi ? 4 : 2;
+            return hi ? 3 : 0;
+          }}
           linkDirectionalArrowRelPos={1}
           linkDirectionalArrowColor={(link: any) => {
             if (hoverLink === link) return '#f25f22';
@@ -361,11 +388,11 @@ export default function GraphView({ data }: GraphViewProps) {
           <Zap className="w-4 h-4" />
         </button>
         {([
-          { mode: 'force', title: 'Bố cục tự do', icon: <Orbit className="w-4 h-4" /> },
-          { mode: 'td', title: 'Bố cục cây dọc', glyph: '↓' },
-          { mode: 'lr', title: 'Bố cục cây ngang', glyph: '→' },
-          { mode: 'radialout', title: 'Bố cục tỏa tròn', glyph: '◎' },
-        ] as const).map(({ mode, title, icon, glyph }) => (
+          { mode: 'force' as const, title: 'Bố cục tự do', icon: <Orbit className="w-4 h-4" />, glyph: undefined },
+          { mode: 'td' as const, title: 'Bố cục cây dọc', icon: undefined, glyph: '↓' },
+          { mode: 'lr' as const, title: 'Bố cục cây ngang', icon: undefined, glyph: '→' },
+          { mode: 'radialout' as const, title: 'Bố cục tỏa tròn', icon: undefined, glyph: '◎' },
+        ] as { mode: 'force'|'td'|'lr'|'radialout'; title: string; icon?: React.ReactNode; glyph?: string }[]).map(({ mode, title, icon, glyph }) => (
           <button
             key={mode}
             onClick={() => setLayoutMode(mode)}

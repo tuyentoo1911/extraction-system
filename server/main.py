@@ -1,13 +1,4 @@
-﻿"""
-FastAPI entry point - NER Knowledge Graph Extractor
-Run: python server/main.py or npm run server
 
-Improvements:
-  - SlowAPI rate limiter: /extract limited to 10 req/min per IP.
-  - MAX_UPLOAD_BYTES: reject PDF larger than 20MB before loading into RAM.
-  - /upload-pdf returns 413 if file is too large.
-  - Custom exception handler returns JSON instead of default HTML.
-"""
 
 import sys
 import logging
@@ -32,7 +23,8 @@ import knowledge_base as kb
 from model import load_model
 from knowledge_base import load_kb
 from ner import run_ner
-from graph import build_graph, predict_new_links
+from graph import build_graph
+import link_predictor
 from metrics import compute_graph_metrics
 from insights import compute_insight_report
 from schemas import (
@@ -54,6 +46,7 @@ from schemas import (
 )
 from chat_service import handle_chat, init_chat_db
 import workspace_memory as workspace_mem
+import db_logger
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -92,7 +85,12 @@ def extract(request: Request, req: ExtractRequest):
     Input: up to 50,000 characters.
     """
     _require_model()
-    return build_graph(run_ner(req.text), req.text)
+    with db_logger.PerfTimer(
+        "/extract",
+        model_name="phobert-ner",
+        input_length=len(req.text),
+    ):
+        return build_graph(run_ner(req.text), req.text)
 
 @app.post("/upload-pdf")
 @limiter.limit("5/minute")
@@ -105,21 +103,15 @@ async def upload_pdf(request: Request, file: UploadFile = File(...)):
     if not file.filename or not file.filename.lower().endswith(".pdf"):
         raise HTTPException(400, detail="Only PDF files are supported (.pdf)")
 
-    chunks: list[bytes] = []
-    total_bytes = 0
-    async for chunk in file:
-        total_bytes += len(chunk)
-        if total_bytes > MAX_UPLOAD_BYTES:
-            raise HTTPException(
-                413,
-                detail=(
-                    f"File exceeds maximum size ({MAX_UPLOAD_BYTES // (1024 * 1024)} MB). "
-                    "Please upload a smaller file."
-                ),
-            )
-        chunks.append(chunk)
-
-    data = b"".join(chunks)
+    data = await file.read()
+    if len(data) > MAX_UPLOAD_BYTES:
+        raise HTTPException(
+            413,
+            detail=(
+                f"File exceeds maximum size ({MAX_UPLOAD_BYTES // (1024 * 1024)} MB). "
+                "Please upload a smaller file."
+            ),
+        )
 
     try:
         from pypdf import PdfReader
@@ -132,7 +124,8 @@ async def upload_pdf(request: Request, file: UploadFile = File(...)):
             raise HTTPException(422, detail="Could not extract text. The file may be a scanned PDF.")
 
         full_text = "\n\n".join(pages)
-        if len(full_text) > MAX_PDF_TEXT_LENGTH:
+        truncated = len("\n\n".join(pages)) > MAX_PDF_TEXT_LENGTH
+        if truncated:
             logger.warning(
                 "PDF '%s' extracted text truncated: %d -> %d chars",
                 file.filename,
@@ -141,12 +134,22 @@ async def upload_pdf(request: Request, file: UploadFile = File(...)):
             )
             full_text = full_text[:MAX_PDF_TEXT_LENGTH]
 
+        # Ghi log tài liệu vào bảng documents
+        db_logger.log_document(
+            workspace_id=None,   # workspace_id chưa có ở bước upload, frontend có thể cập nhật sau
+            filename=file.filename,
+            file_type="pdf",
+            page_count=len(reader.pages),
+            char_count=len(full_text),
+            truncated=truncated,
+        )
+
         return {
             "text": full_text,
             "page_count": len(reader.pages),
             "extracted_pages": len(pages),
             "filename": file.filename,
-            "truncated": len("\n\n".join(pages)) > MAX_PDF_TEXT_LENGTH,
+            "truncated": truncated,
         }
     except HTTPException:
         raise
@@ -157,14 +160,25 @@ async def upload_pdf(request: Request, file: UploadFile = File(...)):
 @limiter.limit("30/minute")
 def predict_links(request: Request, req: PredictLinksRequest):
     _require_model()
-    return PredictLinksResponse(predicted_relations=predict_new_links(req.entities, req.relations))
+    with db_logger.PerfTimer(
+        "/predict-links",
+        model_name="influence_predictor",
+        input_length=len(req.entities),
+    ):
+        predicted = link_predictor.predict_new_links(req.entities, req.relations)
+    return PredictLinksResponse(predicted_relations=predicted)
 
 @app.post("/metrics", response_model=MetricsResponse)
 @limiter.limit("20/minute")
 def metrics(request: Request, req: MetricsRequest):
     """Compute graph metrics from current entities/relations."""
     try:
-        return compute_graph_metrics(GraphData(entities=req.entities, relations=req.relations))
+        with db_logger.PerfTimer(
+            "/metrics",
+            model_name="networkx",
+            input_length=len(req.entities) + len(req.relations),
+        ):
+            return compute_graph_metrics(GraphData(entities=req.entities, relations=req.relations))
     except RuntimeError as e:
         raise HTTPException(500, detail=str(e))
     except Exception as e:
@@ -174,10 +188,17 @@ def metrics(request: Request, req: MetricsRequest):
 async def insight(request: Request, req: InsightRequest):
     """Generate markdown insight from the current graph using backend analysis."""
     try:
-        return await compute_insight_report(
-            GraphData(entities=req.entities, relations=req.relations),
-            req.input_text,
-        )
+        import os
+        model_name = f"ollama/{os.getenv('OLLAMA_MODEL', 'qwen2.5:3b')}" if os.getenv('LLM_PROVIDER') == 'ollama' else os.getenv('LLM_PROVIDER', 'rule-based')
+        with db_logger.PerfTimer(
+            "/insight",
+            model_name=model_name,
+            input_length=len(req.input_text),
+        ):
+            return await compute_insight_report(
+                GraphData(entities=req.entities, relations=req.relations),
+                req.input_text,
+            )
     except RuntimeError as e:
         raise HTTPException(500, detail=str(e))
     except Exception as e:
@@ -210,7 +231,14 @@ def kb_entity(name: str, limit: int = 50):
 async def chat(request: Request, req: ChatRequest):
     """Hybrid chatbot with PostgreSQL memory and optional LLM."""
     try:
-        return await handle_chat(req)
+        import os
+        model_name = f"ollama/{os.getenv('OLLAMA_MODEL', 'qwen2.5:3b')}" if os.getenv('LLM_PROVIDER') == 'ollama' else os.getenv('LLM_PROVIDER', 'rule-based')
+        with db_logger.PerfTimer(
+            "/chat",
+            model_name=model_name,
+            input_length=len(req.message),
+        ):
+            return await handle_chat(req)
     except Exception as e:
         logger.exception("Chat error")
         raise HTTPException(500, detail=f"Chat error: {e}")
@@ -315,6 +343,7 @@ async def startup_event():
         loop.run_in_executor(None, load_kb),
         loop.run_in_executor(None, init_chat_db),
         loop.run_in_executor(None, workspace_mem.init_workspace_db),
+        loop.run_in_executor(None, link_predictor.load_predictor),
     )
 
 if __name__ == "__main__":

@@ -132,9 +132,9 @@ export default function ChatbotView({
       if (resp.confidence !== undefined) setLastConfidence(resp.confidence);
       if (resp.intent) setLastIntent(resp.intent);
       setMessages(prev => {
-        const nextMessages = [
+        const nextMessages: ChatMessage[] = [
         ...prev,
-        { role: 'model', content: resp.reply || 'Xin lỗi, tôi không thể trả lời câu hỏi này.' },
+        { role: 'model' as const, content: resp.reply || 'Xin lỗi, tôi không thể trả lời câu hỏi này.' },
         ];
         onChatStateChange?.({
           messages: nextMessages,
@@ -146,9 +146,9 @@ export default function ChatbotView({
     } catch (error) {
       console.error('Chat error:', error);
       setMessages(prev => {
-        const nextMessages = [
+        const nextMessages: ChatMessage[] = [
         ...prev,
-        { role: 'model', content: 'Đã có lỗi xảy ra khi kết nối với AI. Vui lòng thử lại.' },
+        { role: 'model' as const, content: 'Đã có lỗi xảy ra khi kết nối với AI. Vui lòng thử lại.' },
         ];
         onChatStateChange?.({
           messages: nextMessages,

@@ -35,7 +35,7 @@ def init_pool() -> None:
     if not db_url:
         raise RuntimeError("DATABASE_URL is required for workspace history storage.")
 
-    _pool = ConnectionPool(conninfo=db_url, min_size=1, max_size=5, kwargs={"row_factory": dict_row})
+    _pool = ConnectionPool(conninfo=db_url, min_size=1, max_size=5, open=True)
     with _pool.connection() as conn:
         with conn.cursor() as cur:
             cur.execute(
@@ -144,7 +144,7 @@ def list_workspaces(limit: int = 50) -> list[dict[str, Any]]:
     pool = _ensure_pool()
     safe_limit = max(1, min(limit, 200))
     with pool.connection() as conn:
-        with conn.cursor() as cur:
+        with conn.cursor(row_factory=dict_row) as cur:
             cur.execute(
                 """
                 SELECT
@@ -168,7 +168,7 @@ def list_workspaces(limit: int = 50) -> list[dict[str, Any]]:
 def get_workspace(session_id: str) -> dict[str, Any] | None:
     pool = _ensure_pool()
     with pool.connection() as conn:
-        with conn.cursor() as cur:
+        with conn.cursor(row_factory=dict_row) as cur:
             cur.execute(
                 """
                 SELECT id, title, input_text, graph_data, metrics_data, active_tab, created_at, updated_at

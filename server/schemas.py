@@ -1,4 +1,4 @@
-﻿"""
+"""
 Pydantic schemas - request/response models for FastAPI.
 """
 
@@ -41,6 +41,7 @@ class Relation(BaseModel):
     target: str
     label: str
     isPredicted: bool = False
+    confidence: float = 1.0  # 0..1, only meaningful when isPredicted=True
 
 class GraphData(BaseModel):
     entities: list[Entity]

@@ -157,7 +157,18 @@ export default function Dashboard({ onBack }: { onBack: () => void }) {
     try {
       const predicted = await callPredictLinks(graphData.entities, graphData.relations, false);
       if (predicted && predicted.length > 0) {
-        const newRelations = predicted.map((r: Relation) => ({ ...r, isPredicted: true }));
+        const existingKeys = new Set(
+          graphData.relations.map((r) => `${r.source}::${r.target}::${r.label}`)
+        );
+        const newRelations = predicted
+          .filter((r) => !existingKeys.has(`${r.source}::${r.target}::${r.label}`))
+          .map((r: Relation) => ({ ...r, isPredicted: true }));
+
+        if (newRelations.length === 0) {
+          setError('Không có liên kết mới để thêm.');
+          return;
+        }
+
         setGraphData(prev => {
           if (!prev) return prev;
           const updated = { ...prev, relations: [...prev.relations, ...newRelations] };
@@ -492,11 +503,44 @@ export default function Dashboard({ onBack }: { onBack: () => void }) {
                     onChatStateChange={handleChatStateChange}
                   />
                 )}
-                {activeTab === 'json'      && (
-                  <pre className="p-6 font-mono text-xs text-black/80 whitespace-pre-wrap">
-                    {JSON.stringify(graphData, null, 2)}
-                  </pre>
-                )}
+                {activeTab === 'json'      && (() => {
+                  const jsonStr = JSON.stringify(graphData, null, 2);
+                  const handleExport = () => {
+                    const blob = new Blob([jsonStr], { type: 'application/json' });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    const ts = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
+                    a.download = `knowledge-graph-${ts}.json`;
+                    a.click();
+                    URL.revokeObjectURL(url);
+                  };
+                  return (
+                    <div className="flex flex-col h-full min-h-0">
+                      <div className="flex items-center justify-between px-4 py-2 border-b border-black/10 bg-[#f8f8f6] flex-shrink-0">
+                        <div className="flex items-center gap-4">
+                          <span className="font-mono text-[10px] uppercase tracking-widest text-black/50">Knowledge Graph JSON</span>
+                          <span className="font-mono text-[10px] text-black/40">
+                            {graphData.entities.length} entities · {graphData.relations.length} relations
+                          </span>
+                        </div>
+                        <button
+                          onClick={handleExport}
+                          className="flex items-center gap-1.5 h-7 px-3 rounded-md border border-black/20 bg-white hover:bg-[#f25f22] hover:text-white hover:border-[#f25f22] active:bg-black active:text-white transition-colors font-mono text-[10px] uppercase tracking-widest"
+                          title="Tải file JSON về máy"
+                        >
+                          <Code className="w-3.5 h-3.5" />
+                          Xuất JSON
+                        </button>
+                      </div>
+                      <div className="flex-1 min-h-0 overflow-auto">
+                        <pre className="p-6 font-mono text-xs text-black/80 whitespace-pre-wrap">
+                          {jsonStr}
+                        </pre>
+                      </div>
+                    </div>
+                  );
+                })()}
               </div>
             )}
           </div>

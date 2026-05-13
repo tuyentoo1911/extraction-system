@@ -15,6 +15,7 @@ export interface Relation {
   target: string;
   label: string;
   isPredicted?: boolean;
+  confidence?: number; // 0..1, only for predicted links
 }
 
 export interface GraphData {

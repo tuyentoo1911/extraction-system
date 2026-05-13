@@ -404,7 +404,7 @@ RELATION_PATTERNS: list[RelationPattern] = [
             r"(?:b\u00e1o\s+c\u00e1o|ghi\s+nh\u1eadn|thu\s+v\u1ec1|\u0111\u1ea1t)"
             r"(?:\s+[\w\s]{0,20}?)?doanh\s+thu"
             r"(?:\s+\u0111\u1ea1t)?\s+"
-            r"(?P<money>[\d][[\d,\.]*\s*(?:tri\u1ec7u|t\u1ef7|ngh\u00ecn)?\s*(?:USD|VND|VN\u0110|\u0111\u1ed3ng|\$)?)",
+            r"(?P<money>[\d][\d,\.]*\s*(?:tri\u1ec7u|t\u1ef7|ngh\u00ecn)?\s*(?:USD|VND|VN\u0110|\u0111\u1ed3ng|\$)?)",
             re.UNICODE | re.IGNORECASE,
         ),
         subj_types={"ORGANIZATION"}, obj_types={"MONEY"}, confidence=0.82),
@@ -413,7 +413,7 @@ RELATION_PATTERNS: list[RelationPattern] = [
         re.compile(
             r"doanh\s+thu(?:\s+(?:c\u1ee7a|c\u00f4ng\s+ty))?\s+(?P<org>" + _NAME + r")"
             r"\s+(?:l\u00e0|\u0111\u1ea1t|l\u00ean\s+t\u1edbi)\s+"
-            r"(?P<money>[\d][[\d,\.]*\s*(?:tri\u1ec7u|t\u1ef7|ngh\u00ecn)?\s*(?:USD|VND|VN\u0110|\u0111\u1ed3ng|\$)?)",
+            r"(?P<money>[\d][\d,\.]*\s*(?:tri\u1ec7u|t\u1ef7|ngh\u00ecn)?\s*(?:USD|VND|VN\u0110|\u0111\u1ed3ng|\$)?)",
             re.UNICODE | re.IGNORECASE,
         ),
         subj_types={"ORGANIZATION"}, obj_types={"MONEY"}, confidence=0.80),
@@ -1803,7 +1803,8 @@ def build_graph(raw_entities: list[dict], text: str) -> GraphData:
         if not _is_informative(name, gtype):
             continue
         if kb.kb_ready and len(name) >= 3:
-            kbt = TYPE_MAP.get(kb.get_entity_type(name))
+            _raw_kbt = kb.get_entity_type(name)
+            kbt = TYPE_MAP.get(_raw_kbt) if _raw_kbt is not None else None
             if kbt:
                 gtype = kbt
         key = (name.lower(), gtype)
@@ -1840,7 +1841,8 @@ def build_graph(raw_entities: list[dict], text: str) -> GraphData:
     kb_rels = _extract_kb_relations(entities, sentences, existing_pk)
     logger.debug("Tầng 2 (KB 2-câu): %d", len(kb_rels))
 
-    assoc_rels = _extract_cooccurrence_associations(entities, sentences, existing_pk)
+    # Disabled: weak co-occurrence edges (associated_with) created too much noise.
+    assoc_rels: list[Relation] = []
     logger.debug("Tầng 2.5 (đồng xuất hiện): %d", len(assoc_rels))
 
     # ── Tầng 3: PhoBERT RE ─────────────────────────────────────────

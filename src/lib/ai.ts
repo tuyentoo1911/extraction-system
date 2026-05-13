@@ -82,20 +82,50 @@ export async function callPredictLinks(
 ): Promise<Relation[]> {
   await checkServer();
   const apiBase = await resolveApiBase();
-
-  const res = await fetch(`${apiBase}/predict-links`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ entities, relations, use_deep_analysis: useDeepAnalysis }),
+  const payload = JSON.stringify({
+    entities,
+    relations,
+    use_deep_analysis: useDeepAnalysis,
   });
 
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ detail: res.statusText }));
-    throw new Error(err.detail || 'Link prediction error');
+  // Keep backward compatibility in case backend route naming changes.
+  const endpointCandidates = ['/predict-links', '/predict_links', '/predict-links/'];
+  let lastError: string | null = null;
+
+  for (const endpoint of endpointCandidates) {
+    try {
+      const res = await fetch(`${apiBase}${endpoint}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: payload,
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        return data.predicted_relations as Relation[];
+      }
+
+      if (res.status !== 404) {
+        const err = await res.json().catch(() => ({ detail: res.statusText }));
+        throw new Error(err.detail || 'Link prediction error');
+      }
+
+      lastError = `Endpoint not found: ${endpoint}`;
+    } catch (e: any) {
+      if (e?.message?.includes('fetch')) {
+        throw new Error('Cannot connect to the server. Run: npm run server');
+      }
+      if (e instanceof Error) {
+        // For non-404 backend errors, stop early so the UI can show the real issue.
+        if (!e.message.includes('Endpoint not found')) {
+          throw e;
+        }
+        lastError = e.message;
+      }
+    }
   }
 
-  const data = await res.json();
-  return data.predicted_relations as Relation[];
+  throw new Error(lastError || 'Link prediction endpoint is unavailable');
 }
 
 export async function callMetrics(data: GraphData): Promise<MetricsData> {
